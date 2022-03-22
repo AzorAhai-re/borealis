@@ -17,6 +17,7 @@ describe("Token Test", function () {
     let sender: SignerWithAddress;
     let receiver: SignerWithAddress;
     let nonAdmin: SignerWithAddress;
+    let brokeBoi: SignerWithAddress;
 
     const provider = new MockProvider({ ganacheOptions: {
         hardfork: 'istanbul',
@@ -26,7 +27,7 @@ describe("Token Test", function () {
     const TWO_ETH = parseEther("2.0")
     
     beforeEach(async () => {
-        [ deployer, sender, receiver, nonAdmin ] = await ethers.getSigners()
+        [ deployer, sender, receiver, nonAdmin, brokeBoi ] = await ethers.getSigners()
 
         token = await deployToken(deployer)
     });
@@ -99,6 +100,55 @@ describe("Token Test", function () {
 
             expect(await token.balanceOf(receiver.address)
             ).to.be.eq(TWO_ETH)
+        });
+    })
+
+    describe("Transfer",async () => {
+        const ONE_ETH = parseEther("1.0");
+
+        beforeEach(async () => {
+            [ sender, receiver ].forEach(async (signer) => {
+                await token.connect(deployer).mint(signer.address, TWO_ETH)
+            });
+        });
+
+        it("should not allow transfer if spender doesn't have funds",async () => {
+            await expect(
+                token.connect(brokeBoi).transfer(receiver.address, ONE_ETH)
+            ).to.be.revertedWith("ERC20: transfer amount exceeds balance")
+
+            expect(
+                await token.balanceOf(brokeBoi.address)
+            ).to.be.eq(0)
+            expect(
+                await token.balanceOf(receiver.address)
+            ).to.be.eq(TWO_ETH)
+        });
+
+        it("should revert if the spender isn't allowed to transfer on token owner's behalf",async () => {
+            await expect(
+                token.connect(brokeBoi).transferFrom(sender.address, brokeBoi.address, ONE_ETH)
+            ).to.be.revertedWith("ERC20: insufficient allowance")
+
+            expect(
+                await token.balanceOf(brokeBoi.address)
+            ).to.be.eq(0)
+        });
+
+        it("transfer: should transfer funds if the sender has funds", async () => {
+            await expect(
+                token.connect(sender).transfer(receiver.address, ONE_ETH)
+            ).to.not.be.reverted
+        });
+
+        it("transferFrom: should transfer funds if the caller is allowed to, and spender has funds", async () => {
+            await expect(
+                token.connect(sender).approve(receiver.address, ONE_ETH)
+            ).to.not.be.reverted
+
+            await expect(
+                token.connect(receiver).transferFrom(sender.address, receiver.address, ONE_ETH)
+            ).to.not.be.reverted
         });
     })
 
