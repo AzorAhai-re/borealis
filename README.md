@@ -26,4 +26,3 @@ If you'd like to run tests simply run
 ```bash
 npx hardhat test
 ```
-If you'd like to only test one function then add a `.only` in behind of the test section declarations (statements that start with `describe`) and/or individual tests (statements that start with `it`).
