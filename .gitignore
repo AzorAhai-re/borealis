@@ -4,8 +4,8 @@
 package-lock.json
 
 # dirs
+.openzeppelin
 artifacts
 cache
 node_modules
-artifacts
 typechain-types
