@@ -15,7 +15,7 @@ export const deployToken = async (deployer?: SignerWithAddress) => {
     const tokenFactory = await ethers.getContractFactory("Token", deployer)
     const version = 1
 
-    const token = await upgrades.deployProxy(tokenFactory, [deployer.address, 1], { initializer: "init" }) as Token
+    const token = await upgrades.deployProxy(tokenFactory, [deployer.address, version], { initializer: "init" }) as Token
     await token.deployed()
 
     await token.grantRole(await token.MINTER_ROLE(), deployer.address)
