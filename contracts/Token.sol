@@ -103,8 +103,15 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
     /// @notice Mint `amount` {token_name}s `to` an address 
     /// @param to address to mint {token_name}s to
     /// @param amount how much {token_name}s to mint
-    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {  // toDo: create minter role
+    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
         _mint(to, amount);
+    }
+
+    /// @notice Burn `amount` {token_name}s `to` an address 
+    /// @param from address to burn {token_name}s from
+    /// @param amount how much {token_name}s to burn
+    function burn(address from, uint256 amount) external onlyRole(BURNER_ROLE) {
+        _burn(from, amount);
     }
 
     /// @notice transfer funds given a valid signature
