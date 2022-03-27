@@ -7,7 +7,7 @@ import { MockProvider, solidity } from "ethereum-waffle";
 import { ecsign } from 'ethereumjs-util'
 
 import { Token } from "../typechain-types";
-import { deployToken, getPermitDigest, get_raw_signature } from "./utils/helpers";
+import { deployToken, getPermitDigest } from "./utils/helpers";
 
 chai.use(solidity)
 
@@ -33,7 +33,7 @@ describe("Token Test", function () {
     });
 
     describe("Access Control", async () => {
-        it("should not let non-admins grant roles",async () => {
+        it("should not let non-admins grant roles", async () => {
             const adminRole = await token.DEFAULT_ADMIN_ROLE()
             await expect(
                 token.connect(nonAdmin).grantRole(
@@ -63,7 +63,7 @@ describe("Token Test", function () {
             ).to.be.eq(TWO_ETH);
         });
 
-        it("should be able to revoke a role",async () => {
+        it("should be able to revoke a role", async () => {
             const adminRole = await token.DEFAULT_ADMIN_ROLE()
             const minterRole = await token.MINTER_ROLE()
 
@@ -87,23 +87,60 @@ describe("Token Test", function () {
     })
 
     describe("Mint", async () => {
-        it("should not mint if called by unauthorised minter",async () => {
+        it("should not mint tokens to caller if called by unauthorised Minter", async () => {
             await expect(token.connect(sender).mint(sender.address, TWO_ETH)
             ).to.be.reverted
-
             expect(await token.balanceOf(sender.address)
             ).to.be.eq(parseEther("0.0"))
         });
-        it("should mint if called by a Minter", async () => {
+        it("should mint tokens to caller if called by a Minter", async () => {
             await expect(token.connect(deployer).mint(receiver.address, TWO_ETH)
             ).to.not.be.reverted
 
             expect(await token.balanceOf(receiver.address)
             ).to.be.eq(TWO_ETH)
         });
-    })
+        it("should mint tokens to an address if called by a Minter only", async () => {
+            await expect(token.connect(deployer).mint(nonAdmin.address, TWO_ETH)
+            ).to.not.be.reverted
 
-    describe("Transfer",async () => {
+            await expect(token.connect(sender).mint(nonAdmin.address, TWO_ETH)
+            ).to.be.reverted
+        });
+    });
+
+    describe("Burn", async () => {
+        it("should not burn tokens to caller if called by an unautheorised Burner", async () => {
+            await token.connect(deployer).mint(receiver.address, TWO_ETH.add(parseEther("1.0")))
+
+            await expect(token.connect(receiver).burn(receiver.address, TWO_ETH)
+            ).to.be.reverted
+            expect(await token.balanceOf(receiver.address)
+            ).to.be.eq(parseEther("3.0"))
+        });
+        it("should burn tokens to caller if called by a Burner", async () => {
+            await token.connect(deployer).mint(deployer.address, TWO_ETH)
+            expect(await token.balanceOf(deployer.address)).to.be.eq(TWO_ETH)
+
+            await expect(token.connect(deployer).burn(deployer.address, parseEther("1.0"))
+            ).to.not.be.reverted
+
+            expect(await token.balanceOf(deployer.address)
+            ).to.be.eq(parseEther("1.0"))
+        });
+        it("should burn tokens to an address if called by a Burner only", async () => {
+            await token.connect(deployer).mint(receiver.address, TWO_ETH.add(parseEther("1.0")))
+            expect(await token.balanceOf(receiver.address)).to.be.eq(parseEther("3.0"))
+
+            await expect(token.connect(deployer).burn(receiver.address, parseEther("1.0"))
+            ).to.not.be.reverted
+
+            expect(await token.balanceOf(receiver.address)
+            ).to.be.eq(parseEther("2.0"))
+        });
+    });
+
+    describe("Transfer", async () => {
         const ONE_ETH = parseEther("1.0");
 
         beforeEach(async () => {
@@ -112,7 +149,7 @@ describe("Token Test", function () {
             });
         });
 
-        it("should not allow transfer if spender doesn't have funds",async () => {
+        it("should not allow transfer if spender doesn't have funds", async () => {
             await expect(
                 token.connect(brokeBoi).transfer(receiver.address, ONE_ETH)
             ).to.be.revertedWith("ERC20: transfer amount exceeds balance")
@@ -125,7 +162,7 @@ describe("Token Test", function () {
             ).to.be.eq(TWO_ETH)
         });
 
-        it("should revert if the spender isn't allowed to transfer on token owner's behalf",async () => {
+        it("should revert if the spender isn't allowed to transfer on token owner's behalf", async () => {
             await expect(
                 token.connect(brokeBoi).transferFrom(sender.address, brokeBoi.address, ONE_ETH)
             ).to.be.revertedWith("ERC20: insufficient allowance")
