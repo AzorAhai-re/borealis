@@ -43,22 +43,7 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
     modifier onlyAuthed(address from, address to, uint256 amount, Permit memory permit_resp){
         require(block.timestamp <= permit_resp.deadline, "{token_name}: Trasnfer expired");
         require(permit_resp.nonce == nonces[from]++, "{token_name}: Nonce Invalid");
-        bytes32 _digest = keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                DOMAIN_SEPARATOR,
-                keccak256(
-                    abi.encode(
-                        PERMIT_TYPEHASH,
-                        from,
-                        to,
-                        amount,
-                        permit_resp.nonce,
-                        permit_resp.deadline
-                    )
-                )
-            )
-        );
+        bytes32 _digest = digest(from, to, amount, permit_resp.nonce, permit_resp.deadline);
         address recoveredAddress = ecrecover(_digest, permit_resp.v, permit_resp.r, permit_resp.s);
         require(
             recoveredAddress != address(0) && recoveredAddress == from,
@@ -151,22 +136,7 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
         bytes32 s
     ) external override {
         require(deadline >= block.timestamp, "{token_name}: EXPIRED");
-        bytes32 _digest = keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                DOMAIN_SEPARATOR,
-                keccak256(
-                    abi.encode(
-                        PERMIT_TYPEHASH,
-                        owner,
-                        spender,
-                        value,
-                        nonces[owner]++,
-                        deadline
-                    )
-                )
-            )
-        );
+        bytes32 _digest = digest(owner, spender, value, nonces[owner]++, deadline);
         address recoveredAddress = ecrecover(_digest, v, r, s);
         require(
             recoveredAddress != address(0) && recoveredAddress == owner,
