@@ -10,7 +10,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
 contract BondingCurve is Initializable, AccessControlUpgradeable {
-    address public _token;
+    Token _token;
 
     bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
     bytes32 public constant BOND_ROLE = keccak256("BOND");
@@ -28,7 +28,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
     event CollateralReceived(address, uint256);
 
     function init(address token) external initializer {
-        _token = token;
+        _token = Token(token);
+        mintInitRewards();
     }
 
     function calcLogIntegral(uint256 supply) pure internal returns (uint256) {
@@ -42,11 +43,9 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
     }
 
     function bond(uint256 num) payable external onlyRole(BOND_ROLE) {
-        Token token = Token(_token);
-
         uint256 totalStart;
         uint256 totalEnd;
-        uint256 currSupply = token.totalSupply();
+        uint256 currSupply = _token.totalSupply();
 
         totalStart += calcLogIntegral(currSupply);
 
@@ -56,7 +55,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
 
         (bool success,) = payable(address(this)).call{value: nativeTokenPrice}("");
         require(success, "Low level Native Token transfer call failed");
-        token.mint(msg.sender, num);
+        _token.mint(msg.sender, num);
     }
 
     receive() external payable {
