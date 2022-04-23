@@ -22,7 +22,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
     uint256 public constant startValueNume = 14760147601476015;
     uint256 public constant startValueDeNom = 1000000000000000000000000;
 
-    uint256 public constant growthDenNom = 10000000000000000000000;
+    uint256 public constant growthDenNom = 200000000000000000000000;
+
 
     function init(address token) external initializer {
         _token = token;
