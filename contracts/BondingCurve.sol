@@ -31,7 +31,11 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
 
     function calcLogIntegral(uint256 supply) pure internal returns (uint256) {
         return (
-            (37 * (supply + growthDenNom * ((eNume ** (0 - supply / growthDenNom)) / eDeNom)))/ 100
+            (37 * (
+                supply + growthDenNom * (
+                    (eNume ** (0 - supply / growthDenNom)
+                    ) / eDeNom))
+            )/ 100
         );
     }
 
