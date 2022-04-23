@@ -24,6 +24,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
 
     uint256 public constant growthDenNom = 200000000000000000000000;
 
+    event CollateralReceived(address, uint256);
 
     function init(address token) external initializer {
         _token = token;
@@ -39,34 +40,25 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
         );
     }
 
-    function calcRationalIntegral(uint256 supply) pure internal returns (uint256) {
-        return (
-            (startValueNume * targetSupply * supply - (supply ** 2) / 2) / startValueDeNom
-        );
-    }
-
-    function bond() payable external onlyRole(BOND_ROLE) {
+    function bond(uint256 num) payable external onlyRole(BOND_ROLE) {
         Token token = Token(_token);
 
-        uint256 EthUsdNume = 3_252_237;
-        uint256 EthUsdDeNom = 100;
-
-        uint256 usdAmount = (msg.value * EthUsdNume) / EthUsdDeNom;
-        uint256 xcdAmount = (usdAmount * 271) / 100;
-
-        uint256 totalStart = 0;
-        uint256 totalEnd = 0;
+        uint256 totalStart;
+        uint256 totalEnd;
         uint256 currSupply = token.totalSupply();
-        uint256 newSupply = currSupply + xcdAmount;
 
         totalStart += calcLogIntegral(currSupply);
-        totalStart += calcRationalIntegral(currSupply);
 
-        totalEnd += calcLogIntegral(newSupply);
-        totalEnd += calcRationalIntegral(newSupply);
+        totalEnd += calcLogIntegral(currSupply + num);
 
-        uint256 totalBonded = totalEnd - totalStart;
+        uint256 nativeTokenPrice = totalEnd - totalStart;
 
-        token.mint(msg.sender, totalBonded);
+        (bool success,) = payable(address(this)).call{value: nativeTokenPrice}("");
+        require(success, "Low level Native Token transfer call failed");
+        token.mint(msg.sender, num);
+    }
+
+    receive() external payable {
+        emit CollateralReceived(msg.sender, msg.value);
     }
 }
