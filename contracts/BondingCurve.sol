@@ -25,11 +25,18 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
 
     uint256 public constant growthDenNom = 200000000000000000000000;
 
+    uint256 public promoEpoch;
+
     event CollateralReceived(address, uint256);
 
     function init(address token) external initializer {
         _token = Token(token);
         mintInitRewards();
+    }
+
+    function mintInitRewards() internal onlyInitializing {
+        _token.approve(address(_token), 180573542300000000000000);
+        _token.mint(address(this), 180573542300000000000000);
     }
 
     function calcLogIntegral(uint256 supply) pure internal returns (uint256) {
@@ -55,6 +62,14 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
 
         (bool success,) = payable(address(this)).call{value: nativeTokenPrice}("");
         require(success, "Low level Native Token transfer call failed");
+
+        // The following predicate checks whether or not the
+        // promotional period has ended
+        if (promoEpoch < 20000) {
+            _token.transfer(msg.sender, (180573542300000000000000 * 5) / 100000);
+            promoEpoch += 1;
+        }
+
         _token.mint(msg.sender, num);
     }
 
