@@ -52,6 +52,10 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
         _;
     }
 
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
     function init(address deployer, uint256 version) external initializer {
         string memory name_ = "{token_name}";
 
