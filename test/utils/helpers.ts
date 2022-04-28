@@ -7,7 +7,9 @@ import {
     isAddress, isBytesLike
 } from "ethers/lib/utils"
 
-import { Token } from "../../typechain-types"
+import { Token, BondingCurve } from "../../typechain-types"
+
+const UniPoolArtifact = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
 
 export const deployToken = async (deployer?: SignerWithAddress) => {
     deployer = deployer ? deployer : (await ethers.getSigners())[0]
@@ -22,6 +24,50 @@ export const deployToken = async (deployer?: SignerWithAddress) => {
     await token.grantRole(await token.BURNER_ROLE(), deployer.address)
 
     return token
+}
+
+export const deployCurve = async (deployer?: SignerWithAddress, token?: Token) => {
+    deployer = deployer ? deployer : (await ethers.getSigners())[0]
+
+    if (token) { null } else {
+        const tokenFactory = await ethers.getContractFactory("Token", deployer)
+        const version = 1
+
+        token = await upgrades.deployProxy(
+            tokenFactory, [deployer.address, version], { initializer: "init" }
+        ) as Token
+            
+        await token.deployed()
+        
+        await token.grantRole(await token.MINTER_ROLE(), deployer.address)
+        await token.grantRole(await token.BURNER_ROLE(), deployer.address)
+    }
+
+    // const UniUsdcEthPool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
+    const fakeUniUsdcWethPoolFactory = await ethers.getContractFactory("UniswapV3Pool", deployer);
+    const fakeUniUsdcWethPool = await fakeUniUsdcWethPoolFactory.deploy();
+    await fakeUniUsdcWethPool.deployed();
+    // fakeUniUsdcWethPool.slot0.returns({
+    //     sqrtPriceX96: BigNumber.from("1473278467459847576161095040421829"),
+    //     tick: BigNumber.from("196623"),
+    //     observationIndex: BigNumber.from("548"),
+    //     observationCardinality: BigNumber.from("720"),
+    //     observationCardinalityNext: BigNumber.from("720"),
+    //     feeProtocol: BigNumber.from("0"),
+    //     unlocked: true
+    // });
+
+    const curveFactory = await ethers.getContractFactory("BondingCurve", deployer)
+
+    const curve = await upgrades.deployProxy(
+        curveFactory, [fakeUniUsdcWethPool.address, token.address], { initializer: "init" }
+    ) as BondingCurve
+    await curve.deployed()
+
+    await token.grantRole(await token.MINTER_ROLE(), curve.address);
+    await curve.mintInitRewards();
+
+    return {"bondingCurve": curve, "token": token}
 }
 
 export const getPermitDigest = async (
