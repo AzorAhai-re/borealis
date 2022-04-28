@@ -32,6 +32,12 @@ describe("Token Test", function () {
         token = await deployToken(deployer)
     });
 
+    describe("Decimals",async () => {
+        it("should return the correct decimals", async () => {
+            expect(await token.decimals()).to.be.eq(6);
+        });
+    });
+
     describe("Access Control", async () => {
         it("should not let non-admins grant roles", async () => {
             const adminRole = await token.DEFAULT_ADMIN_ROLE()
