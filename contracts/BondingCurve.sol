@@ -8,7 +8,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "./Token.sol";
-import "./libraries/ABDKMathQuad.sol";
+import "./libraries/ABDKMath64x64.sol";
 import "./libraries/FullMath.sol";
 
 /// @title A title that should describe the contract/interface
@@ -23,11 +23,11 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
 
     uint256 public constant targetSupply = 1355000000000;
 
-    bytes16 internal XCD_USD;
-    bytes16 internal GrowthDenNom;
-    // bytes16 internal PromoBalance;
-    // bytes16 internal Five;
-    // bytes16 internal Thousand;
+    int128 internal XCD_USD;
+    int128 internal GrowthDenNom;
+    // int128 internal PromoBalance;
+    // int128 internal Five;
+    // int128 internal Thousand;
 
     address public uniUsdcEthPool;
     bool internal initComplete;
@@ -38,11 +38,11 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
     function init(
         address pool,
         address token) external initializer {
-        XCD_USD = ABDKMathQuad.fromUInt(27 * 1e5);
-        GrowthDenNom = ABDKMathQuad.fromUInt(200000000000);
-        // PromoBalance = ABDKMathQuad.fromUInt(180573542300);
-        // Five = ABDKMathQuad.fromUInt(5);
-        // Thousand = ABDKMathQuad.fromUInt(1000);
+        XCD_USD = ABDKMath64x64.fromUInt(271 * 1e4);
+        GrowthDenNom = ABDKMath64x64.fromUInt(200000000000);
+        // PromoBalance = ABDKMath64x64.fromUInt(180573542300);
+        // Five = ABDKMath64x64.fromUInt(5);
+        // Thousand = ABDKMath64x64.fromUInt(1000);
 
         _token = Token(token);
         uniUsdcEthPool = pool;
@@ -71,29 +71,26 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
         initComplete = true;
     }
 
-    function calcPricePerToken(uint256 supply) view internal returns (bytes16) {
-        bytes16 eExp = ABDKMathQuad.neg(
-            ABDKMathQuad.div(
-                ABDKMathQuad.fromUInt(supply),
+    function calcPricePerToken(uint256 supply) view internal returns (int128) {
+        int128 eExp = ABDKMath64x64.neg(
+            ABDKMath64x64.div(
+                ABDKMath64x64.fromUInt(supply),
                 GrowthDenNom
             )
         );
-        bytes16 exponentiated_component = ABDKMathQuad.exp(eExp);
+        int128 exponentiated_component = ABDKMath64x64.exp(eExp);
 
-        
-        return (ABDKMathQuad.mul(XCD_USD, ABDKMathQuad.sub(ABDKMathQuad.fromUInt(1), exponentiated_component)));
+        return (ABDKMath64x64.mul(XCD_USD, ABDKMath64x64.sub(ABDKMath64x64.fromUInt(1), exponentiated_component)));
     }
 
-    function calcLogIntegral(uint256 supply) view internal returns (bytes16) {
-        bytes16 eExp = ABDKMathQuad.neg(
-            ABDKMathQuad.div(
-                ABDKMathQuad.fromUInt(supply),
-                GrowthDenNom
-            )
-        );
+    function calcLogIntegral(uint256 supply) view internal returns (uint256) {
+        console.log("supply: ", supply);
+        int256 eExp = - (int256(supply * 1e5) / 2e11);
 
-        bytes16 exponentiated_component = ABDKMathQuad.exp(eExp);
-        return(ABDKMathQuad.mul(XCD_USD, ABDKMathQuad.add(ABDKMathQuad.fromUInt(supply), ABDKMathQuad.mul(GrowthDenNom, exponentiated_component))));
+        int128 exponentiated_component = ABDKMath64x64.inv(ABDKMath64x64.pow(ABDKMath64x64.fromUInt(2), uint256(ABDKMath64x64.muli(ABDKMath64x64.log_2(ABDKMath64x64.exp(1)), - int256(eExp)))));
+        int128 multipliedBy = ABDKMath64x64.add(ABDKMath64x64.fromUInt(supply), ABDKMath64x64.mul(GrowthDenNom, exponentiated_component));
+
+        return(ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
     }
 
     function bond() payable external onlyRole(BOND_ROLE) {
@@ -102,31 +99,26 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
         uint256 currSupply = _token.totalSupply();
 
         uint256 usdEthPrice = usdEth();
-        uint256 currSupplyUsd = currSupply / (27 * 1e5);
-        console.log("\t- current supply", currSupplyUsd);
-        console.log("\t- usd_eth spot price", usdEthPrice);
+        uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 1e2, 271));
+
         uint256 usdPrice = msg.value / usdEthPrice;
         uint xcdDemand = FullMath.mulDivRoundingUp(usdPrice, 271, 100);
 
-        // uint256 tokenSpotPrice = ABDKMathQuad.toUInt(calcPricePerToken(currSupply + 1e6));
-        console.log("\t- usd price of msg.value: ", usdPrice / 1e4);
-        console.log("\t- xcd price of msg.value: ", xcdDemand / 1e4);
+        // uint256 tokenSpotPrice = ABDKMath64x64.toUInt(calcPricePerToken(currSupply + 1e6));
 
         // console.log("\t- price per token before bonding: ", tokenSpotPrice);
 
-        totalStart += ABDKMathQuad.toUInt(calcLogIntegral(currSupplyUsd));
-        totalEnd += ABDKMathQuad.toUInt(calcLogIntegral(currSupplyUsd + xcdDemand));
+        totalStart = calcLogIntegral(currSupplyUsd);
+        totalEnd = calcLogIntegral(currSupplyUsd + xcdDemand);
 
         uint256 tokensToIssue = (totalEnd - totalStart) / 1e4;
-
-        console.log("\t- total tokens owed: ", tokensToIssue);
 
         // The following predicate checks whether or not the
         // promotional period has ended
         // if (promoPeriod) {
-        //     bytes16 currPrice = calcPricePerToken(currSupply + tokensToIssue);
-        //     bytes16 inflationScale = ABDKMathQuad.div(ABDKMathQuad.sub(XCD_USD, currPrice), XCD_USD);
-        //     uint256 amountOwed = ABDKMathQuad.toUInt(ABDKMathQuad.div(ABDKMathQuad.mul(ABDKMathQuad.mul(inflationScale, PromoBalance), Five), Thousand));
+        //     int128 currPrice = calcPricePerToken(currSupply + tokensToIssue);
+        //     int128 inflationScale = ABDKMath64x64.div(ABDKMath64x64.sub(XCD_USD, currPrice), XCD_USD);
+        //     uint256 amountOwed = ABDKMath64x64.toUInt(ABDKMath64x64.div(ABDKMath64x64.mul(ABDKMath64x64.mul(inflationScale, PromoBalance), Five), Thousand));
         //     console.log("promo amount owed: ", amountOwed);
 
         //     _token.transfer(msg.sender, amountOwed);
