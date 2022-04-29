@@ -84,7 +84,6 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
     }
 
     function calcLogIntegral(uint256 supply) view internal returns (uint256) {
-        console.log("supply: ", supply);
         int256 eExp = - (int256(supply * 1e5) / 2e11);
 
         int128 exponentiated_component = ABDKMath64x64.inv(ABDKMath64x64.pow(ABDKMath64x64.fromUInt(2), uint256(ABDKMath64x64.muli(ABDKMath64x64.log_2(ABDKMath64x64.exp(1)), - int256(eExp)))));
