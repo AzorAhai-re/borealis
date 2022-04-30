@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "./Token.sol";
+import "./NoDelegateCall.sol";
 import "./libraries/ABDKMath64x64.sol";
 import "./libraries/FullMath.sol";
 
@@ -15,7 +16,7 @@ import "./libraries/FullMath.sol";
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract BondingCurve is Initializable, AccessControlUpgradeable {
+contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall {
     Token _token;
 
     bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
@@ -38,6 +39,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
     function init(
         address pool,
         address token) external initializer {
+        _init_NDC();
         XCD_USD = ABDKMath64x64.fromUInt(271 * 1e4);
         GrowthDenNom = ABDKMath64x64.fromUInt(200000000000);
         // PromoBalance = ABDKMath64x64.fromUInt(180573542300);
