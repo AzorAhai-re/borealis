@@ -71,7 +71,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
         initComplete = true;
     }
 
-    function calcPricePerToken(uint256 supply) view internal returns (int128) {
+    function calcPricePerToken(uint256 supply) view public returns (int128) {
         int128 eExp = ABDKMath64x64.neg(
             ABDKMath64x64.div(
                 ABDKMath64x64.fromUInt(supply),
