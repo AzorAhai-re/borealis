@@ -30,7 +30,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
 
     address public uniUsdcEthPool;
     bool internal initComplete;
-    bool public promoPeriod;
+    uint16 promoEpoch;
 
     event CollateralReceived(address, uint256);
 
@@ -74,7 +74,6 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         require(!initComplete, "cannot call again");
         _token.approve(address(_token), 180573542300);
         _token.mint(address(this), 180573542300);
-        promoPeriod = true;
 
         initComplete = true;
     }
@@ -125,15 +124,11 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
 
         // The following predicate checks whether or not the
         // promotional period has ended
-        if (promoPeriod) {
+        if (promoEpoch < 200000) {
             uint256 curveBalance = _token.balanceOf(address(this));
+            promoBonus > curveBalance ? _token.transfer(msg.sender, curveBalance) : _token.transfer(msg.sender, promoBonus);
 
-            if (promoBonus > curveBalance){
-                promoPeriod = false;
-                curveBalance == 0 ? true : _token.transfer(msg.sender, curveBalance);
-            } else {
-                _token.transfer(msg.sender, promoBonus);
-            }
+            promoEpoch += 1;
         }
 
         _token.mint(msg.sender, tokensToIssue);
