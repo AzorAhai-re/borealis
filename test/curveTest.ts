@@ -33,6 +33,12 @@ describe("Bonding Curve Test", function () {
         xcdUsd = BigNumber.from(27 * 1e5);
     });
 
+    async function getSpotPrice(){
+        const current_supply = await token.totalSupply();
+        const tokenSpotPrice = await math.toUInt(await curve.calcPricePerToken(current_supply.add(1e6)))
+
+        return tokenSpotPrice
+    }
 
     async function checkSpotPrice(){
         const current_supply = await token.totalSupply();
