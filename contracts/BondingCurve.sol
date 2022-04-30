@@ -25,10 +25,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
     uint256 public constant targetSupply = 1355000000000;
 
     int128 internal XCD_USD;
-    int128 internal GrowthDenNom;
-    // int128 internal PromoBalance;
-    // int128 internal Five;
-    // int128 internal Thousand;
+    int128 internal growthDenNom;
+    uint256 internal promoBonus;
 
     address public uniUsdcEthPool;
     bool internal initComplete;
@@ -41,10 +39,18 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         address token) external initializer {
         _init_NDC();
         XCD_USD = ABDKMath64x64.fromUInt(27 * 1e5);
-        GrowthDenNom = ABDKMath64x64.fromUInt(200000000000);
-        // PromoBalance = ABDKMath64x64.fromUInt(180573542300);
-        // Five = ABDKMath64x64.fromUInt(5);
-        // Thousand = ABDKMath64x64.fromUInt(1000);
+        growthDenNom = ABDKMath64x64.fromUInt(200000000000);
+
+        promoBonus =
+                ABDKMath64x64.toUInt(
+                    ABDKMath64x64.div(
+                        ABDKMath64x64.mul(
+                            ABDKMath64x64.fromUInt(180573542300),
+                            ABDKMath64x64.fromUInt(5)
+                        ),
+                        ABDKMath64x64.fromUInt(100000)
+                    )
+                );
 
         _token = Token(token);
         uniUsdcEthPool = pool;
@@ -77,7 +83,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         int128 eExp = ABDKMath64x64.neg(
             ABDKMath64x64.div(
                 ABDKMath64x64.fromUInt(supply),
-                GrowthDenNom
+                growthDenNom
             )
         );
         int128 exponentiated_component = ABDKMath64x64.exp(eExp);
@@ -89,7 +95,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         int256 eExp = - (int256(supply * 1e5) / 2e11);
 
         int128 exponentiated_component = ABDKMath64x64.inv(ABDKMath64x64.pow(ABDKMath64x64.fromUInt(2), uint256(ABDKMath64x64.muli(ABDKMath64x64.log_2(ABDKMath64x64.exp(1)), - int256(eExp)))));
-        int128 multipliedBy = ABDKMath64x64.add(ABDKMath64x64.fromUInt(supply), ABDKMath64x64.mul(GrowthDenNom, exponentiated_component));
+        int128 multipliedBy = ABDKMath64x64.add(ABDKMath64x64.fromUInt(supply), ABDKMath64x64.mul(growthDenNom, exponentiated_component));
 
         return(ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
     }
