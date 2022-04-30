@@ -40,7 +40,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         address pool,
         address token) external initializer {
         _init_NDC();
-        XCD_USD = ABDKMath64x64.fromUInt(271 * 1e4);
+        XCD_USD = ABDKMath64x64.fromUInt(27 * 1e5);
         GrowthDenNom = ABDKMath64x64.fromUInt(200000000000);
         // PromoBalance = ABDKMath64x64.fromUInt(180573542300);
         // Five = ABDKMath64x64.fromUInt(5);
@@ -106,7 +106,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 1e2, 271));
 
         uint256 usdPrice = msg.value / usdEthPrice;
-        uint xcdDemand = FullMath.mulDivRoundingUp(usdPrice, 271, 100);
+        uint256 xcdDemand = FullMath.mulDivRoundingUp(usdPrice, 27, 10);
 
         // uint256 tokenSpotPrice = ABDKMath64x64.toUInt(calcPricePerToken(currSupply + 1e6));
 
