@@ -4,18 +4,21 @@ import { BigNumber, Contract } from "ethers";
 import { parseEther } from "ethers/lib/utils";
 import { ethers } from "hardhat";
 
-import { BondingCurve, Token } from "../typechain-types";
+import { BondingCurve, Token, ABDKMath64x64Mock } from "../typechain-types";
 import { deployToken, deployCurve } from "./utils/helpers";
 
 describe("Bonding Curve Test", function () {
 
     let token: Token;
     let curve: BondingCurve;
+    let math: ABDKMath64x64Mock;
 
     let deployer: SignerWithAddress;
     let bonder: SignerWithAddress;
     let receiver: SignerWithAddress;
     let nonAdmin: SignerWithAddress;
+    
+    let xcdUsd: BigNumber;
     
     beforeEach(async () => {
         [ deployer, bonder, receiver, nonAdmin ] = await ethers.getSigners()
@@ -23,6 +26,11 @@ describe("Bonding Curve Test", function () {
         token = await deployToken(deployer)
         const { bondingCurve } = await deployCurve(deployer, token)
         curve = bondingCurve
+
+        const MathFactory = await ethers.getContractFactory("ABDKMath64x64Mock");
+        math = await MathFactory.deploy();
+
+        xcdUsd = BigNumber.from(27 * 1e5);
     });
 
 
