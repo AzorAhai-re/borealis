@@ -92,7 +92,10 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
         return(ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
     }
 
-    function bond() payable external onlyRole(BOND_ROLE) {
+    function bond() payable external
+        noDelegateCall
+        onlyRole(BOND_ROLE)
+    {
         uint256 totalStart;
         uint256 totalEnd;
         uint256 currSupply = _token.totalSupply();
