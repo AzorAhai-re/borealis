@@ -108,7 +108,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         uint256 currSupply = _token.totalSupply();
 
         uint256 usdEthPrice = usdEth();
-        uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 1e2, 271));
+        uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 10, 27));
 
         uint256 usdPrice = msg.value / usdEthPrice;
         uint256 xcdDemand = FullMath.mulDivRoundingUp(usdPrice, 27, 10);
