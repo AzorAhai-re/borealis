@@ -36,11 +36,11 @@ describe("Bonding Curve Test", function () {
     }
 
     describe("Bonding", async () => {
-        it("should be able to bond 1 token", async () => {
-            await curve.grantRole(await curve.BOND_ROLE(), bonder.address);
-            const xcdUsd = BigNumber.from(27 * 1e5);
+        it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
+            await curve.connect(bonder).approveBonding();
             const current_supply = (await token.totalSupply()).div(xcdUsd);
-            await curve.connect(bonder).bond({value: parseEther("0.3")});
+            const tx_queue = await curve.connect(bonder).bond({value: parseEther("0.3")});
+            // const tx_receipt = tx_queue.wait();
 
             const tokenWeight0 = 2.7 * ((current_supply.toNumber() / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
             const tokenWeight1 = 2.7 * (((current_supply.toNumber() / 1e6) + 2351.15) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
@@ -52,6 +52,9 @@ describe("Bonding Curve Test", function () {
             ).to.be.lt(1e6,
                 `expecting the bonder's token balance to be ~= to ${expTokensOwed}`
             );
+
+            expect(await ethers.provider.getBalance(curve.address)).to.be.eq(parseEther("0.3"));
+        });
 
         it("should stabalise the price once the threshold has been reached", async () => {
             // mint to the threashold amount
