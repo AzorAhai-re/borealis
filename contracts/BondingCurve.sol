@@ -115,7 +115,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         totalStart = calcLogIntegral(currSupplyUsd);
         totalEnd = calcLogIntegral(currSupplyUsd + xcdDemand);
 
-        uint256 tokensToIssue = (totalEnd - totalStart) / 1e4;
+        uint256 tokensToIssue = (totalEnd - totalStart) / 1e6;
 
         // The following predicate checks whether or not the
         // promotional period has ended
