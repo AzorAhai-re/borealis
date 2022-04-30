@@ -21,6 +21,8 @@ contract UniswapV3Pool {
         bool unlocked;
     }
 
+    constructor() {}
+
     function slot0() public pure returns(Slot0 memory _slot0) {
         _slot0 = Slot0({
             sqrtPriceX96: 1473278467459847576161095040421829,
