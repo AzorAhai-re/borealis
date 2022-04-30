@@ -4,7 +4,7 @@ import { BigNumber } from "ethers";
 import { parseEther } from "ethers/lib/utils";
 import { ethers, GasTracker } from "hardhat";
 
-import { BondingCurve, Token, ABDKMath64x64Mock } from "../typechain-types";
+import { ABDKMath64x64Mock, BondingCurve, Token, UniswapV3Pool } from "../typechain-types";
 import { deployToken, deployCurve } from "./utils/helpers";
 import { GetGas } from "hardhat-gas-trackooor/dist/src/GetGas";
 
@@ -13,6 +13,7 @@ describe("Bonding Curve Test", function () {
     let token: Token;
     let curve: BondingCurve;
     let math: ABDKMath64x64Mock;
+    let pool: UniswapV3Pool;
 
     let deployer: SignerWithAddress;
     let bonder: SignerWithAddress;
@@ -30,6 +31,9 @@ describe("Bonding Curve Test", function () {
 
         const MathFactory = await ethers.getContractFactory("ABDKMath64x64Mock");
         math = await MathFactory.deploy();
+
+        const PoolFactory = await ethers.getContractFactory("UniswapV3Pool");
+        pool = await PoolFactory.deploy();
 
         xcdUsd = BigNumber.from(27 * 1e5);
     });
@@ -80,10 +84,15 @@ describe("Bonding Curve Test", function () {
             const tx_gas_approve = await GetGas(await curve.connect(bonder).approveBonding());
             const current_supply = (await token.totalSupply()).div(xcdUsd);
             const tx_gas_bond = await GetGas(await curve.connect(bonder).bond({value: parseEther("0.3")}));
-            // const tx_receipt = tx_queue.wait();
+
+            const slot0 = await pool.slot0();
+            const sqrtPriceX96 = slot0.sqrtPriceX96; 
+            const usdEthPrice = sqrtPriceX96.pow(2).div(BigNumber.from(2).pow(192));
+            const usdMsgValue = parseEther("0.3").div(usdEthPrice);
+            const xcdDemand = usdMsgValue.toNumber() * 2.7;
 
             const tokenWeight0 = 2.7 * ((current_supply.toNumber() / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
-            const tokenWeight1 = 2.7 * (((current_supply.toNumber() / 1e6) + 2342.47) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
+            const tokenWeight1 = 2.7 * (((current_supply.toNumber() + xcdDemand) / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
 
             let expTokensOwed = tokenWeight1 - tokenWeight0
             expTokensOwed += 180573.5423 * 5e-5;
