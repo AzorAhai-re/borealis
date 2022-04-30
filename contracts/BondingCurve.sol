@@ -126,9 +126,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         // promotional period has ended
         if (promoEpoch < 200000) {
             uint256 curveBalance = _token.balanceOf(address(this));
-            promoBonus > curveBalance ? _token.transfer(msg.sender, curveBalance) : _token.transfer(msg.sender, promoBonus);
-
             promoEpoch += 1;
+            promoBonus > curveBalance ? _token.transfer(msg.sender, curveBalance) : _token.transfer(msg.sender, promoBonus);
         }
 
         _token.mint(msg.sender, tokensToIssue);
