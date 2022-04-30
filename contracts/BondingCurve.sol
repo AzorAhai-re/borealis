@@ -126,6 +126,12 @@ contract BondingCurve is Initializable, AccessControlUpgradeable {
         _token.mint(msg.sender, tokensToIssue);
     }
 
+    function approveBonding() noDelegateCall external {
+        require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
+
+        _setupRole(BOND_ROLE, msg.sender);
+    }
+
     receive() external payable {
         emit CollateralReceived(msg.sender, msg.value);
     }
