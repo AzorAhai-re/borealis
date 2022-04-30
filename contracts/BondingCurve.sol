@@ -125,14 +125,16 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
 
         // The following predicate checks whether or not the
         // promotional period has ended
-        // if (promoPeriod) {
-        //     int128 currPrice = calcPricePerToken(currSupply + tokensToIssue);
-        //     int128 inflationScale = ABDKMath64x64.div(ABDKMath64x64.sub(XCD_USD, currPrice), XCD_USD);
-        //     uint256 amountOwed = ABDKMath64x64.toUInt(ABDKMath64x64.div(ABDKMath64x64.mul(ABDKMath64x64.mul(inflationScale, PromoBalance), Five), Thousand));
-        //     console.log("promo amount owed: ", amountOwed);
+        if (promoPeriod) {
+            uint256 curveBalance = _token.balanceOf(address(this));
 
-        //     _token.transfer(msg.sender, amountOwed);
-        // }
+            if (promoBonus > curveBalance){
+                promoPeriod = false;
+                curveBalance == 0 ? true : _token.transfer(msg.sender, curveBalance);
+            } else {
+                _token.transfer(msg.sender, promoBonus);
+            }
+        }
 
         _token.mint(msg.sender, tokensToIssue);
     }
