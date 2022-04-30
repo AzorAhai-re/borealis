@@ -1,11 +1,12 @@
 import chai, {expect, should} from "chai";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { BigNumber, Contract } from "ethers";
+import { BigNumber } from "ethers";
 import { parseEther } from "ethers/lib/utils";
-import { ethers } from "hardhat";
+import { ethers, GasTracker } from "hardhat";
 
 import { BondingCurve, Token, ABDKMath64x64Mock } from "../typechain-types";
 import { deployToken, deployCurve } from "./utils/helpers";
+import { GetGas } from "hardhat-gas-trackooor/dist/src/GetGas";
 
 describe("Bonding Curve Test", function () {
 
@@ -76,11 +77,9 @@ describe("Bonding Curve Test", function () {
         });
 
         it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
-            await curve.connect(bonder).approveBonding();
+            const tx_gas_approve = await GetGas(await curve.connect(bonder).approveBonding());
             const current_supply = (await token.totalSupply()).div(xcdUsd);
-            const curveBalanceBefore = token.balanceOf(curve.address);
-            const tx_queue = await curve.connect(bonder).bond({value: parseEther("0.3")});
-            const curveBalanceAfter = token.balanceOf(curve.address);
+            const tx_gas_bond = await GetGas(await curve.connect(bonder).bond({value: parseEther("0.3")}));
             // const tx_receipt = tx_queue.wait();
 
             const tokenWeight0 = 2.7 * ((current_supply.toNumber() / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
@@ -95,6 +94,8 @@ describe("Bonding Curve Test", function () {
             );
 
             expect(await ethers.provider.getBalance(curve.address)).to.be.eq(parseEther("0.3"));
+            console.log(`        ⛽ approveBonding (${tx_gas_approve} gas)`);
+            console.log(`        ⛽ bond (${tx_gas_bond} gas)`);
         });
 
         it("should stabalise the price once the threshold has been reached", async () => {

@@ -5,6 +5,7 @@ import "@nomiclabs/hardhat-waffle";
 import '@nomiclabs/hardhat-ethers';
 import '@openzeppelin/hardhat-upgrades';
 import '@typechain/hardhat';
+import "hardhat-gas-trackooor"
 
 export default {
   solidity: {
