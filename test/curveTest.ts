@@ -17,7 +17,7 @@ describe("Bonding Curve Test", function () {
     let bonder: SignerWithAddress;
     let receiver: SignerWithAddress;
     let nonAdmin: SignerWithAddress;
-    
+
     let xcdUsd: BigNumber;
     
     beforeEach(async () => {
@@ -50,6 +50,31 @@ describe("Bonding Curve Test", function () {
     }
 
     describe("Bonding", async () => {
+        it("should cosmetically prove to be an increasing function up till the h-asymptote",async () => {
+            await curve.connect(bonder).approveBonding();
+            const stage0 = await getSpotPrice();
+
+            await curve.connect(bonder).bond({value: parseEther("1")});
+            const stage1 = await getSpotPrice();
+
+            await curve.connect(bonder).bond({value: parseEther("10")});
+            const stage2 = await getSpotPrice();
+
+            // at this point, the price has stabilised
+            await curve.connect(bonder).bond({value: parseEther("100")});
+            const stage3 = await getSpotPrice();
+
+            expect(stage1).to.be.gt(stage0,
+                `Stage 1 should be greater than ${stage0}`
+            )
+            expect(stage2).to.be.gt(stage1,
+                `Stage 2 should be greater than ${stage1}`
+            )
+            expect(stage3).to.be.eq(stage2,
+                `Stage 3 should be greater than or equal to ${stage2}`
+            )
+        });
+
         it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
             await curve.connect(bonder).approveBonding();
             const current_supply = (await token.totalSupply()).div(xcdUsd);
