@@ -275,7 +275,7 @@ contract ABDKMath64x64Mock {
    * @param y unsigned 256-bit integer number
    * @return signed 64.64-bit fixed point number
    */
-  function divu (uint256 x, uint256 y) internal pure returns (int128) {
+  function divu (uint256 x, uint256 y) public pure returns (int128) {
     unchecked {
       require (y != 0);
       uint128 result = divuu (x, y);
