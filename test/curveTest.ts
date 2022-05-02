@@ -2,11 +2,10 @@ import chai, {expect, should} from "chai";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { BigNumber } from "ethers";
 import { parseEther } from "ethers/lib/utils";
-import { ethers, GasTracker } from "hardhat";
+import { ethers, GetGas } from "hardhat";
 
 import { ABDKMath64x64Mock, BondingCurve, Token, UniswapV3Pool } from "../typechain-types";
 import { deployToken, deployCurve } from "./utils/helpers";
-import { GetGas } from "hardhat-gas-trackooor/dist/src/GetGas";
 
 describe("Bonding Curve Test", function () {
 
