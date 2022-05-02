@@ -70,10 +70,9 @@ contract BondingCurve is AccessControl {
 
     function mintInitRewards() external {
         require(!initComplete, "cannot call again");
+        initComplete = true;
         _token.approve(address(_token), 180573542300);
         _token.mint(address(this), 180573542300);
-
-        initComplete = true;
     }
 
     function calcPricePerToken(uint256 supply) view public returns (int128) {
