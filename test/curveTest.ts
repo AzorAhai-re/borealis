@@ -98,7 +98,7 @@ describe("Bonding Curve Test", function () {
             expTokensOwed += 180573.5423 * 5e-5;
             expect(
                 Math.abs((await token.balanceOf(bonder.address)).toNumber() - Math.floor(expTokensOwed * 1e6))
-            ).to.be.lt(1e6,
+            ).to.be.lt(10,
                 `expecting the bonder's token balance to be ~= to ${expTokensOwed}`
             );
 
