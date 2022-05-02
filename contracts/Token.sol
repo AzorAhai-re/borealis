@@ -4,12 +4,9 @@ pragma solidity ^0.8.4;
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import "./IToken.sol";
 
@@ -17,7 +14,7 @@ import "./IToken.sol";
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradeable {
+contract Token is IToken, ERC20, AccessControl {
     // solhint-disable-next-line var-name-mixedcase
     bytes32 public DOMAIN_SEPARATOR;
 
@@ -29,6 +26,8 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+
+    address public immutable deployer;
 
     mapping(address => uint256) public nonces;
 
@@ -52,14 +51,7 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
         _;
     }
 
-    function decimals() public pure override returns (uint8) {
-        return 6;
-    }
-
-    function init(address deployer, uint256 version) external initializer {
-        string memory name_ = "{token_name}";
-
-        __ERC20_init(name_, "{token_symbol}");
+    constructor () ERC20("{token_name}", "{token_symbol}") {
         uint256 chainId;
 
         // solhint-disable-next-line no-inline-assembly
@@ -73,13 +65,27 @@ contract Token is IToken, Initializable, ERC20Upgradeable, AccessControlUpgradea
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
                 keccak256(bytes(name())),
-                keccak256(bytes(Strings.toString(version))),
+                keccak256(bytes(Strings.toString(1))),
                 chainId,
                 address(this)
             )
         );
 
-        _setupRole(DEFAULT_ADMIN_ROLE, deployer);
+        deployer = msg.sender;
+
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    /// @notice After the deployment/bootstrap period, the deployer shouldn't
+    ///         be allowed to unconditionally mint and burn tokens.
+    /// @dev The mint and burn roles are meant to be executed by the Governance contracts
+    ///      and the pool.
+    function revokeAdminRole() external {
+        revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
     function digest(

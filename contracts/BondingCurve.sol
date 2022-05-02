@@ -3,8 +3,7 @@ pragma solidity ^0.8.4;
 
 import "hardhat/console.sol";
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "./Token.sol";
@@ -15,7 +14,9 @@ import "./libraries/FullMath.sol";
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall {
+contract BondingCurve is AccessControl {
+    // used to prevent delegate calls
+    address internal immutable originalContract;
     Token _token;
 
     bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
@@ -33,10 +34,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
 
     event CollateralReceived(address, uint256);
 
-    function init(
-        address pool,
-        address token) external initializer {
-        _init_NDC();
+    constructor (address pool, address token) {
         XCD_USD = ABDKMath64x64.fromUInt(27 * 1e5);
         growthDenNom = ABDKMath64x64.fromUInt(200000000000);
 
@@ -51,9 +49,10 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
                     )
                 );
 
-        _token = Token(token);
         uniUsdcEthPool = pool;
+        originalContract = address(this);
 
+        _token = Token(token);
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
@@ -102,6 +101,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         onlyRole(BOND_ROLE)
     {
         require(address(this) == originalContract, "no delegate call");
+        require(msg.value > 0, "You need > 0 ETH to purchase tokens");
         uint256 totalStart;
         uint256 totalEnd;
         uint256 currSupply = _token.totalSupply();
@@ -110,7 +110,7 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 10, 27));
 
         uint256 usdPrice = msg.value / usdEthPrice;
-        uint256 xcdDemand = FullMath.mulDivRoundingUp(usdPrice, 27, 10);
+        uint256 xcdDemand = usdPrice * 27 / 10;
 
         // uint256 tokenSpotPrice = ABDKMath64x64.toUInt(calcPricePerToken(currSupply + 1e6));
 
