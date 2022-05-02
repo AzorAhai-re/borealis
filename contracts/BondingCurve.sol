@@ -138,7 +138,4 @@ contract BondingCurve is AccessControl {
         _setupRole(BOND_ROLE, msg.sender);
     }
 
-    receive() external payable {
-        emit CollateralReceived(msg.sender, msg.value);
-    }
 }
