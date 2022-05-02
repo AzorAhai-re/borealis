@@ -8,7 +8,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "./Token.sol";
-import "./NoDelegateCall.sol";
 import "./libraries/ABDKMath64x64.sol";
 import "./libraries/FullMath.sol";
 
@@ -100,9 +99,9 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
     }
 
     function bond() payable external
-        noDelegateCall
         onlyRole(BOND_ROLE)
     {
+        require(address(this) == originalContract, "no delegate call");
         uint256 totalStart;
         uint256 totalEnd;
         uint256 currSupply = _token.totalSupply();
@@ -133,7 +132,8 @@ contract BondingCurve is Initializable, AccessControlUpgradeable, NoDelegateCall
         _token.mint(msg.sender, tokensToIssue);
     }
 
-    function approveBonding() noDelegateCall external {
+    function approveBonding() external {
+        require(address(this) == originalContract, "no delegate call");
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
         _setupRole(BOND_ROLE, msg.sender);
