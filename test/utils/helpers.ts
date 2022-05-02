@@ -15,9 +15,8 @@ export const deployToken = async (deployer?: SignerWithAddress) => {
     deployer = deployer ? deployer : (await ethers.getSigners())[0]
 
     const tokenFactory = await ethers.getContractFactory("Token", deployer)
-    const version = 1
 
-    const token = await upgrades.deployProxy(tokenFactory, [deployer.address, version], { initializer: "init" }) as Token
+    const token = await tokenFactory.deploy() as Token
     await token.deployed()
 
     await token.grantRole(await token.MINTER_ROLE(), deployer.address)
@@ -33,9 +32,7 @@ export const deployCurve = async (deployer?: SignerWithAddress, token?: Token) =
         const tokenFactory = await ethers.getContractFactory("Token", deployer)
         const version = 1
 
-        token = await upgrades.deployProxy(
-            tokenFactory, [deployer.address, version], { initializer: "init" }
-        ) as Token
+        token = await tokenFactory.deploy() as Token
             
         await token.deployed()
         
@@ -59,9 +56,7 @@ export const deployCurve = async (deployer?: SignerWithAddress, token?: Token) =
 
     const curveFactory = await ethers.getContractFactory("BondingCurve", deployer)
 
-    const curve = await upgrades.deployProxy(
-        curveFactory, [fakeUniUsdcWethPool.address, token.address], { initializer: "init" }
-    ) as BondingCurve
+    const curve = await curveFactory.deploy(fakeUniUsdcWethPool.address, token.address) as BondingCurve
     await curve.deployed()
 
     await token.grantRole(await token.MINTER_ROLE(), curve.address);
