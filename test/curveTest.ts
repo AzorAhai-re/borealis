@@ -95,7 +95,9 @@ describe("Bonding Curve Test", function () {
             const tokenWeight1 = 2.7 * (((current_supply.toNumber() + xcdDemand) / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
 
             let expTokensOwed = tokenWeight1 - tokenWeight0
-            expTokensOwed += 180573.5423 * 5e-5;
+            expTokensOwed += 180573.5423 * 5e-5; // add the promo bonus
+            // Check that the precision of the amount of tokens owed to the bonder
+            // is sufficiently high; less than 1e-5 difference from off-chain calculation
             expect(
                 Math.abs((await token.balanceOf(bonder.address)).toNumber() - Math.floor(expTokensOwed * 1e6))
             ).to.be.lt(10,
