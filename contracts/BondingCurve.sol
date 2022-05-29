@@ -5,6 +5,7 @@ import "hardhat/console.sol";
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
@@ -17,7 +18,7 @@ import "./libraries/FullMath.sol";
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract BondingCurve is AccessControl {
+contract BondingCurve is AccessControl, Pausable {
     // used to prevent delegate calls
     address private immutable originalContract;
     address private uniV2Pool;
@@ -49,6 +50,10 @@ contract BondingCurve is AccessControl {
 
     function checkIfDelegateCall() private view {
         require(address(this) == originalContract, "no delegate call");
+    }
+
+    function pauseBonding() public onlyRole(DEFAULT_ADMIN_ROLE){
+        _pause();
     }
 
     constructor (address _uniUsdcEthPool, address _uniV2Fact, address _token, address _weth, address _wethPool) {
@@ -123,6 +128,7 @@ contract BondingCurve is AccessControl {
     function bond(uint256 _wethInput) payable external
         onlyRole(BOND_ROLE)
         noDelegateCall
+        whenNotPaused
     {
         require(
             (_wethInput > 0 && msg.value == 0) ||
@@ -179,17 +185,17 @@ contract BondingCurve is AccessControl {
         } 
     }
 
-    function withdrawMintBalance() noDelegateCall external {
+    function withdrawMintBalance() noDelegateCall whenNotPaused() external {
         require(mintBalance[msg.sender] > 0, "you do not have any pending transfers");
         trustedToken.mint(msg.sender, mintBalance[msg.sender]);
     }
 
-    function withdrawPromoBalance() noDelegateCall external {
+    function withdrawPromoBalance() noDelegateCall whenNotPaused() external {
         require(promoBalance[msg.sender] > 0, "you do not have any pending transfers");
         trustedToken.transfer(msg.sender, promoBalance[msg.sender]);
     }
 
-    function approveBonding() external {
+    function approveBonding() external whenNotPaused() {
         require(msg.sender != address(0), "hey, no funny business!");
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
