@@ -4,11 +4,12 @@ pragma solidity ^0.8.4;
 import "hardhat/console.sol";
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
-import "./Token.sol";
+import "./interfaces/IToken.sol";
 import "./libraries/ABDKMath64x64.sol";
 import "./libraries/FullMath.sol";
 
@@ -18,24 +19,42 @@ import "./libraries/FullMath.sol";
 /// @dev Explain to a developer any extra details
 contract BondingCurve is AccessControl {
     // used to prevent delegate calls
+    address private immutable originalContract;
     address private uniV2Pool;
+    address private wethPool;
+    address private weth;
+    IToken internal trustedToken;
 
     bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
     bytes32 public constant BOND_ROLE = keccak256("BOND");
+    uint256 public constant targetSupply = 2501235447590;
 
-    uint256 public constant targetSupply = 1355000000000;
+    mapping(address => uint256) promoBalance;
+    mapping(address => uint256) mintBalance;
 
     int128 internal XCD_USD;
     int128 internal growthDenNom;
     uint256 internal promoBonus;
 
-    address public uniUsdcEthPool;
+    address public trustedUniUsdcEthPool;
     bool internal initComplete;
     uint16 promoEpoch;
 
     event CollateralReceived(address, uint256);
 
+    modifier noDelegateCall () {
+        checkIfDelegateCall();
+        _;
+    }
+
+    function checkIfDelegateCall() private view {
+        require(address(this) == originalContract, "no delegate call");
+    }
+
     constructor (address _uniUsdcEthPool, address _uniV2Fact, address _token, address _weth, address _wethPool) {
+        require(IERC20Metadata(_weth).decimals() == 18, "can't account for collateral of token if decimals != 18");
+        require(IERC20Metadata(_token).decimals() == 6, "can't account for crypto-fiat token if decimals != 6");
+
         XCD_USD = ABDKMath64x64.fromUInt(27 * 1e5);
         growthDenNom = ABDKMath64x64.fromUInt(200000000000);
 
@@ -50,16 +69,19 @@ contract BondingCurve is AccessControl {
                     )
                 );
 
-        uniUsdcEthPool = pool;
+        trustedUniUsdcEthPool = _uniUsdcEthPool;
         originalContract = address(this);
 
         uniV2Pool = IUniswapV2Factory(_uniV2Fact).createPair(_token, _weth);
         weth = _weth;
+        wethPool = _wethPool;
+
+        trustedToken = IToken(_token);
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
     function usdEth() view internal returns (uint256) {
-        (uint160 sqrtPricex96, , , , , ,) = IUniswapV3Pool(uniUsdcEthPool).slot0();
+        (uint160 sqrtPricex96, , , , , ,) = IUniswapV3Pool(trustedUniUsdcEthPool).slot0();
 
         uint256 u256SqrtPrice;
         require(
@@ -71,10 +93,10 @@ contract BondingCurve is AccessControl {
     }
 
     function mintInitRewards() external {
+        trustedToken.approve(address(trustedToken), 180573542300);
+        trustedToken.mint(address(this), 180573542300);
         require(!initComplete, "cannot call again");
         initComplete = true;
-        _token.approve(address(_token), 180573542300);
-        _token.mint(address(this), 180573542300);
     }
 
     function calcPricePerToken(uint256 supply) view public returns (int128) {
@@ -98,24 +120,29 @@ contract BondingCurve is AccessControl {
         return(ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
     }
 
-    function bond() payable external
+    function bond(uint256 _wethInput) payable external
         onlyRole(BOND_ROLE)
+        noDelegateCall
     {
-        require(address(this) == originalContract, "no delegate call");
-        require(msg.value > 0, "You need > 0 ETH to purchase tokens");
+        require(
+            (_wethInput > 0 && msg.value == 0) ||
+            (msg.value > 0 && _wethInput == 0),
+            "You can only bond with either WETH or ETH"
+        );
+        if (_wethInput > 0) {
+            require(IERC20(weth).allowance(msg.sender, address(this)) >= _wethInput, "Insufficient allowance for tx");
+            require(IERC20(weth).balanceOf(msg.sender) >= _wethInput, "You need > 0 WETH to bond");
+        }
         uint256 totalStart;
         uint256 totalEnd;
-        uint256 currSupply = _token.totalSupply();
+        uint256 currSupply = trustedToken.totalSupply();
 
         uint256 usdEthPrice = usdEth();
         uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 10, 27));
 
-        uint256 usdPrice = msg.value / usdEthPrice;
+        uint256 collateral = _wethInput == 0? msg.value : _wethInput;
+        uint256 usdPrice = collateral / usdEthPrice;
         uint256 xcdDemand = usdPrice * 27 / 10;
-
-        // uint256 tokenSpotPrice = ABDKMath64x64.toUInt(calcPricePerToken(currSupply + 1e6));
-
-        // console.log("\t- price per token before bonding: ", tokenSpotPrice);
 
         totalStart = calcLogIntegral(currSupplyUsd);
         totalEnd = calcLogIntegral(currSupplyUsd + xcdDemand);
@@ -123,18 +150,35 @@ contract BondingCurve is AccessControl {
         uint256 tokensToIssue = (totalEnd - totalStart) / 1e6;
 
         // The following predicate checks whether or not the
-        // promotional period has ended
-        if (promoEpoch < 200000) {
+        // promotional period has ended and gives the user a mint
+        // bonus if they haven't already
+
+        if (promoEpoch < 200000 && promoBalance[msg.sender] == 0) {
             promoEpoch += 1;
-            uint256 curveBalance = _token.balanceOf(address(this));
-            promoBonus > curveBalance ? _token.transfer(msg.sender, curveBalance) : _token.transfer(msg.sender, promoBonus);
+            uint256 curveBalance = trustedToken.balanceOf(address(this));
+            if (promoBonus > curveBalance){
+                promoBalance[msg.sender] += curveBalance;
+            } else {
+                promoBalance[msg.sender] += promoBonus;
+            }
         }
 
-        _token.mint(msg.sender, tokensToIssue);
+        mintBalance[msg.sender] += tokensToIssue;
+
     }
 
-    function approveBonding() external {
-        require(address(this) == originalContract, "no delegate call");
+    function withdrawMintBalance() noDelegateCall external {
+        require(mintBalance[msg.sender] > 0, "you do not have any pending transfers");
+        trustedToken.mint(msg.sender, mintBalance[msg.sender]);
+    }
+
+    function withdrawPromoBalance() noDelegateCall external {
+        require(promoBalance[msg.sender] > 0, "you do not have any pending transfers");
+        trustedToken.transfer(msg.sender, promoBalance[msg.sender]);
+    }
+
+    function approveBonding() noDelegateCall external {
+        require(msg.sender != address(0), "hey, no funny business!");
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
         _setupRole(BOND_ROLE, msg.sender);

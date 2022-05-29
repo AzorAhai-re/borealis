@@ -48,7 +48,7 @@ describe("Bonding Curve Test", function () {
         const current_supply = await token.totalSupply();
         const tokenSpotPrice = await math.toUInt(await curve.calcPricePerToken(current_supply.add(1e6)))
         expect(Math.abs(tokenSpotPrice.sub(2700000).toNumber())
-        ).to.be.lt(1e5);
+        ).to.be.lt(10);
 
         return tokenSpotPrice
     }
@@ -58,14 +58,20 @@ describe("Bonding Curve Test", function () {
             await curve.connect(bonder).approveBonding();
             const stage0 = await getSpotPrice();
 
-            await curve.connect(bonder).bond({value: parseEther("1")});
+            await curve.connect(bonder).bond(0, {value: parseEther("1")});
+            await curve.connect(bonder).withdrawMintBalance();
+            await curve.connect(bonder).withdrawPromoBalance();
             const stage1 = await getSpotPrice();
 
-            await curve.connect(bonder).bond({value: parseEther("10")});
+            await curve.connect(bonder).bond(0, {value: parseEther("10")});
+            await curve.connect(bonder).withdrawMintBalance();
+            await curve.connect(bonder).withdrawPromoBalance();
             const stage2 = await getSpotPrice();
 
             // at this point, the price has stabilised
-            await curve.connect(bonder).bond({value: parseEther("100")});
+            await curve.connect(bonder).bond(0, {value: parseEther("100")});
+            await curve.connect(bonder).withdrawMintBalance();
+            await curve.connect(bonder).withdrawPromoBalance();
             const stage3 = await getSpotPrice();
 
             expect(stage1).to.be.gt(stage0,
@@ -82,7 +88,9 @@ describe("Bonding Curve Test", function () {
         it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
             const tx_gas_approve = await GetGas(await curve.connect(bonder).approveBonding());
             const current_supply = (await token.totalSupply()).div(xcdUsd);
-            const tx_gas_bond = await GetGas(await curve.connect(bonder).bond({value: parseEther("0.3")}));
+            const tx_gas_bond = await GetGas(await curve.connect(bonder).bond(0, {value: parseEther("0.3")}));
+            await curve.connect(bonder).withdrawMintBalance();
+            await curve.connect(bonder).withdrawPromoBalance();
 
             const slot0 = await pool.slot0();
             const sqrtPriceX96 = slot0.sqrtPriceX96; 
@@ -95,6 +103,7 @@ describe("Bonding Curve Test", function () {
 
             let expTokensOwed = tokenWeight1 - tokenWeight0
             expTokensOwed += 180573.5423 * 5e-5; // add the promo bonus
+            // console.log("expTokensOwed: ", expTokensOwed)
             // Check that the precision of the amount of tokens owed to the bonder
             // is sufficiently high; less than 1e-5 difference from off-chain calculation
             expect(
@@ -116,9 +125,9 @@ describe("Bonding Curve Test", function () {
             await curve.connect(bonder).approveBonding();
             
             await checkSpotPrice();
-            await curve.connect(bonder).bond({value: parseEther("1000")});
+            await curve.connect(bonder).bond(0, {value: parseEther("1000")});
             await checkSpotPrice();
-            await curve.connect(bonder).bond({value: parseEther("1000")});
+            await curve.connect(bonder).bond(0, {value: parseEther("1000")});
             await checkSpotPrice();
         });
     });

@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import "./IToken.sol";
+import "./interfaces/IToken.sol";
 
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
@@ -113,7 +113,7 @@ contract Token is IToken, ERC20, AccessControl {
     /// @notice Mint `amount` {token_name}s `to` an address 
     /// @param to address to mint {token_name}s to
     /// @param amount how much {token_name}s to mint
-    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
+    function mint(address to, uint256 amount) external override onlyRole(MINTER_ROLE) {
         _mint(to, amount);
     }
 

@@ -1,7 +1,7 @@
 import { ethers, upgrades } from "hardhat"
 
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers"
-import { BigNumber, BigNumberish, Wallet } from "ethers"
+import { BigNumber, BigNumberish, Wallet, constants } from "ethers"
 import {
     keccak256, solidityPack, defaultAbiCoder,
     isAddress, isBytesLike
@@ -10,6 +10,7 @@ import {
 import { Token, BondingCurve } from "../../typechain-types"
 
 const UniPoolArtifact = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
+const UniPoolFactArtifact = require("@uniswap/v2-core/build/UniswapV2Factory.json");
 
 export const deployToken = async (deployer?: SignerWithAddress) => {
     deployer = deployer ? deployer : (await ethers.getSigners())[0]
@@ -40,25 +41,36 @@ export const deployCurve = async (deployer?: SignerWithAddress, token?: Token) =
         await token.grantRole(await token.BURNER_ROLE(), deployer.address)
     }
 
-    // const UniUsdcEthPool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
     const fakeUniUsdcWethPoolFactory = await ethers.getContractFactory("UniswapV3Pool", deployer);
     const fakeUniUsdcWethPool = await fakeUniUsdcWethPoolFactory.deploy();
     await fakeUniUsdcWethPool.deployed();
-    // fakeUniUsdcWethPool.slot0.returns({
-    //     sqrtPriceX96: BigNumber.from("1473278467459847576161095040421829"),
-    //     tick: BigNumber.from("196623"),
-    //     observationIndex: BigNumber.from("548"),
-    //     observationCardinality: BigNumber.from("720"),
-    //     observationCardinalityNext: BigNumber.from("720"),
-    //     feeProtocol: BigNumber.from("0"),
-    //     unlocked: true
-    // });
 
-    const curveFactory = await ethers.getContractFactory("BondingCurve", deployer)
-
-    const curve = await curveFactory.deploy(fakeUniUsdcWethPool.address, token.address) as BondingCurve
+    // console.log(UniPoolFactArtifact.evm.deployedBytecode)
+    const fakeUniPoolFactoryFactory = await ethers.getContractFactoryFromArtifact(
+        {
+            _format: "hh-sol-artifact-1",
+            contractName: "UniswapV2Factory",
+            sourceName: "@uniswap/v2-core/contracts/UniswapV2Factory.sol",
+            abi: UniPoolFactArtifact.abi,
+            bytecode: UniPoolFactArtifact.evm.bytecode.object,
+            deployedBytecode: UniPoolFactArtifact.evm.deployedBytecode.object,
+            linkReferences: {},
+            deployedLinkReferences: {}
+        }, deployer
+    );
+    const fakeUniPoolFactory = await fakeUniPoolFactoryFactory.deploy(deployer.address);
+    await fakeUniPoolFactory.deployed();
+    
+    const fakeWETH9Factory = await ethers.getContractFactory("ERC20");
+    const fakeWETH9 = await fakeWETH9Factory.deploy("Wrapped Ether", "WETH");
+    await fakeWETH9.deployed();
+    
+    const curveFactory = await ethers.getContractFactory("BondingCurve", deployer);
+    
+    // leave _wethPool as blank for now
+    const curve = await curveFactory.deploy(fakeUniUsdcWethPool.address, fakeUniPoolFactory.address, token.address, fakeWETH9.address, constants.AddressZero) as BondingCurve
     await curve.deployed()
-
+    
     await token.grantRole(await token.MINTER_ROLE(), curve.address);
     await curve.mintInitRewards();
 
