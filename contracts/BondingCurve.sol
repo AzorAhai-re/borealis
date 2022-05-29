@@ -29,8 +29,8 @@ contract BondingCurve is AccessControl {
     bytes32 public constant BOND_ROLE = keccak256("BOND");
     uint256 public constant targetSupply = 2501235447590;
 
-    mapping(address => uint256) promoBalance;
-    mapping(address => uint256) mintBalance;
+    mapping(address => uint256) private promoBalance;
+    mapping(address => uint256) private mintBalance;
 
     int128 internal XCD_USD;
     int128 internal growthDenNom;
