@@ -189,7 +189,7 @@ contract BondingCurve is AccessControl {
         trustedToken.transfer(msg.sender, promoBalance[msg.sender]);
     }
 
-    function approveBonding() noDelegateCall external {
+    function approveBonding() external {
         require(msg.sender != address(0), "hey, no funny business!");
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
