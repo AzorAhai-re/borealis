@@ -5,6 +5,8 @@ import "hardhat/console.sol";
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
+import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
 import "./Token.sol";
 import "./libraries/ABDKMath64x64.sol";
@@ -16,8 +18,7 @@ import "./libraries/FullMath.sol";
 /// @dev Explain to a developer any extra details
 contract BondingCurve is AccessControl {
     // used to prevent delegate calls
-    address internal immutable originalContract;
-    Token _token;
+    address private uniV2Pool;
 
     bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
     bytes32 public constant BOND_ROLE = keccak256("BOND");
@@ -34,7 +35,7 @@ contract BondingCurve is AccessControl {
 
     event CollateralReceived(address, uint256);
 
-    constructor (address pool, address token) {
+    constructor (address _uniUsdcEthPool, address _uniV2Fact, address _token, address _weth, address _wethPool) {
         XCD_USD = ABDKMath64x64.fromUInt(27 * 1e5);
         growthDenNom = ABDKMath64x64.fromUInt(200000000000);
 
@@ -52,7 +53,8 @@ contract BondingCurve is AccessControl {
         uniUsdcEthPool = pool;
         originalContract = address(this);
 
-        _token = Token(token);
+        uniV2Pool = IUniswapV2Factory(_uniV2Fact).createPair(_token, _weth);
+        weth = _weth;
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
