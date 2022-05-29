@@ -164,7 +164,19 @@ contract BondingCurve is AccessControl {
         }
 
         mintBalance[msg.sender] += tokensToIssue;
+        if (_wethInput > 0){
+            (bool success, ) = weth.call(
+                abi.encodeWithSignature(
+                    "transferFrom(address,address,uint256)",
+                    msg.sender, address(this), collateral
+                )
+            );
 
+            if (!success){
+                mintBalance[msg.sender] -= tokensToIssue;
+                revert("ERC20: WETH low level transfer failed");
+            }
+        } 
     }
 
     function withdrawMintBalance() noDelegateCall external {
