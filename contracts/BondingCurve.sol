@@ -185,17 +185,17 @@ contract BondingCurve is AccessControl, Pausable {
         } 
     }
 
-    function withdrawMintBalance() noDelegateCall whenNotPaused() external {
+    function withdrawMintBalance() noDelegateCall external {
         require(mintBalance[msg.sender] > 0, "you do not have any pending transfers");
         trustedToken.mint(msg.sender, mintBalance[msg.sender]);
     }
 
-    function withdrawPromoBalance() noDelegateCall whenNotPaused() external {
+    function withdrawPromoBalance() noDelegateCall external {
         require(promoBalance[msg.sender] > 0, "you do not have any pending transfers");
         trustedToken.transfer(msg.sender, promoBalance[msg.sender]);
     }
 
-    function approveBonding() external whenNotPaused() {
+    function approveBonding() external whenNotPaused {
         require(msg.sender != address(0), "hey, no funny business!");
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
