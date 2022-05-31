@@ -30,8 +30,15 @@ contract BondingCurve is AccessControl, Pausable {
     bytes32 public constant BOND_ROLE = keccak256("BOND");
     uint256 public constant targetSupply = 2501235447590;
 
+    struct UserAccount{
+        bool opened;
+        uint256 balance;
+        uint256 timeOfLastTrade;
+        uint256 mintAllowance;
+    }
+
     mapping(address => uint256) private promoBalance;
-    mapping(address => uint256) private mintBalance;
+    mapping(address => UserAccount) private mintBalance;
 
     int128 internal XCD_USD;
     int128 internal growthDenNom;
@@ -40,6 +47,10 @@ contract BondingCurve is AccessControl, Pausable {
     address public trustedUniUsdcEthPool;
     bool internal initComplete;
     uint16 promoEpoch;
+    // ToDo: set on governance
+    uint256 private rateLimitEpoch = 4 hours;
+    // ToDo: set on governance
+    uint256 private rateLimitThreshold = 5000 * 1e6;
 
     event CollateralReceived(address, uint256);
 
@@ -50,10 +61,6 @@ contract BondingCurve is AccessControl, Pausable {
 
     function checkIfDelegateCall() private view {
         require(address(this) == originalContract, "no delegate call");
-    }
-
-    function pauseBonding() public onlyRole(DEFAULT_ADMIN_ROLE){
-        _pause();
     }
 
     constructor (address _uniUsdcEthPool, address _uniV2Fact, address _token, address _weth, address _wethPool) {
@@ -85,6 +92,34 @@ contract BondingCurve is AccessControl, Pausable {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
+    function pauseBonding() public onlyRole(DEFAULT_ADMIN_ROLE){
+        _pause();
+    }
+
+    function checkRateLimit(UserAccount storage _userAccount, uint256 collateral) private {
+        require(collateral <= rateLimitThreshold, "rate limit: overspending collateral; can not purchase this much");
+
+        if (!_userAccount.opened) {
+            _userAccount.mintAllowance = rateLimitThreshold;
+            _userAccount.opened = true;
+        }
+
+        if (_userAccount.mintAllowance < collateral) {
+            if (
+                (
+                    block.timestamp - _userAccount.timeOfLastTrade >= rateLimitEpoch &&
+                    _userAccount.opened
+                )
+            ) {
+                // refresh, or open account, mint allowance to be able to mint
+                _userAccount.mintAllowance = rateLimitThreshold;
+            }
+            else {
+                revert("rate limit: quantitative rate limit reached, please wait next RL epoch");
+            }
+        }
+    }
+
     function usdEth() view internal returns (uint256) {
         (uint160 sqrtPricex96, , , , , ,) = IUniswapV3Pool(trustedUniUsdcEthPool).slot0();
 
@@ -98,10 +133,10 @@ contract BondingCurve is AccessControl, Pausable {
     }
 
     function mintInitRewards() external {
-        trustedToken.approve(address(trustedToken), 180573542300);
-        trustedToken.mint(address(this), 180573542300);
         require(!initComplete, "cannot call again");
         initComplete = true;
+        trustedToken.approve(address(trustedToken), 180573542300);
+        trustedToken.mint(address(this), 180573542300);
     }
 
     function calcPricePerToken(uint256 supply) view public returns (int128) {
@@ -141,6 +176,7 @@ contract BondingCurve is AccessControl, Pausable {
         }
         uint256 totalStart;
         uint256 totalEnd;
+        UserAccount storage user = mintBalance[msg.sender];
         uint256 currSupply = trustedToken.totalSupply();
 
         uint256 usdEthPrice = usdEth();
@@ -148,6 +184,9 @@ contract BondingCurve is AccessControl, Pausable {
 
         uint256 collateral = _wethInput == 0? msg.value : _wethInput;
         uint256 usdPrice = collateral / usdEthPrice;
+
+        checkRateLimit(user, usdPrice);
+
         uint256 xcdDemand = usdPrice * 27 / 10;
 
         totalStart = calcLogIntegral(currSupplyUsd);
@@ -169,7 +208,9 @@ contract BondingCurve is AccessControl, Pausable {
             }
         }
 
-        mintBalance[msg.sender] += tokensToIssue;
+        user.mintAllowance -= usdPrice;
+        user.timeOfLastTrade = block.timestamp;
+        user.balance += tokensToIssue;
         if (_wethInput > 0){
             (bool success, ) = weth.call(
                 abi.encodeWithSignature(
@@ -179,20 +220,29 @@ contract BondingCurve is AccessControl, Pausable {
             );
 
             if (!success){
-                mintBalance[msg.sender] -= tokensToIssue;
+                user.balance -= tokensToIssue;
                 revert("ERC20: WETH low level transfer failed");
             }
         } 
     }
 
     function withdrawMintBalance() noDelegateCall external {
-        require(mintBalance[msg.sender] > 0, "you do not have any pending transfers");
-        trustedToken.mint(msg.sender, mintBalance[msg.sender]);
+        UserAccount storage user = mintBalance[msg.sender];
+
+        require(user.opened, "user account is not opened");
+        require(user.balance > 0, "you do not have any pending transfers");
+        uint256 amount = user.balance;
+        user.balance = 0;
+
+        trustedToken.mint(msg.sender, amount);
     }
 
     function withdrawPromoBalance() noDelegateCall external {
         require(promoBalance[msg.sender] > 0, "you do not have any pending transfers");
-        trustedToken.transfer(msg.sender, promoBalance[msg.sender]);
+        uint256 amount = promoBalance[msg.sender];
+        promoBalance[msg.sender] = 0;
+
+        trustedToken.transfer(msg.sender, amount);
     }
 
     function approveBonding() external whenNotPaused {
@@ -200,6 +250,10 @@ contract BondingCurve is AccessControl, Pausable {
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
         _setupRole(BOND_ROLE, msg.sender);
+    }
+
+    function setRateLimitThreshold(uint256 newThreshold) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        rateLimitThreshold = newThreshold;
     }
 
 }
