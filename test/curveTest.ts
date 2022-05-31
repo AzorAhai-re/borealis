@@ -56,6 +56,7 @@ describe("Bonding Curve Test", function () {
     describe("Bonding", async () => {
         it("should cosmetically prove to be an increasing function up till the h-asymptote",async () => {
             await curve.connect(bonder).approveBonding();
+            await curve.connect(deployer).setRateLimitThreshold(parseEther("5000"));
             const stage0 = await getSpotPrice();
 
             await curve.connect(bonder).bond(0, {value: parseEther("1")});
@@ -118,6 +119,7 @@ describe("Bonding Curve Test", function () {
         });
 
         it("should stabalise the price once the threshold has been reached", async () => {
+            await curve.connect(deployer).setRateLimitThreshold(parseEther("5000"));
             // mint to the threashold amount
             // with the bond-deploy-mint already in the currSupply, this takes
             // the curve way past the beginning of the "threshhold domain"
@@ -131,6 +133,4 @@ describe("Bonding Curve Test", function () {
             await checkSpotPrice();
         });
     });
-
-    
 })
