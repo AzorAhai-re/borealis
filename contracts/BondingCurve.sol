@@ -6,36 +6,23 @@ import "hardhat/console.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
-import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
-import "./interfaces/IToken.sol";
-import "./libraries/ABDKMath64x64.sol";
-import "./libraries/FullMath.sol";
+import "./interfaces/IBondingCurve.sol";
+import "./interfaces/IMap.sol";
+import "./Map.sol";
 
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract BondingCurve is AccessControl, Pausable {
+contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
     // used to prevent delegate calls
     address private immutable originalContract;
-    address private uniV2Pool;
-    address private wethPool;
-    address private weth;
-    IToken internal trustedToken;
+    IWETH   private weth;
 
     bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
     bytes32 public constant BOND_ROLE = keccak256("BOND");
     uint256 public constant targetSupply = 2501235447590;
-
-    struct UserAccount{
-        bool opened;
-        uint256 balance;
-        uint256 timeOfLastTrade;
-        uint256 mintAllowance;
-    }
 
     mapping(address => uint256) private promoBalance;
     mapping(address => UserAccount) private mintBalance;
@@ -52,8 +39,6 @@ contract BondingCurve is AccessControl, Pausable {
     // ToDo: set on governance
     uint256 private rateLimitThreshold = 5000 * 1e6;
 
-    event CollateralReceived(address, uint256);
-
     modifier noDelegateCall () {
         checkIfDelegateCall();
         _;
@@ -63,7 +48,11 @@ contract BondingCurve is AccessControl, Pausable {
         require(address(this) == originalContract, "no delegate call");
     }
 
-    constructor (address _uniUsdcEthPool, address _uniV2Fact, address _token, address _weth, address _wethPool) {
+    constructor (
+        address _token,
+        address _weth,
+        address _manager
+    ) Map(_manager) {
         require(IERC20Metadata(_weth).decimals() == 18, "can't account for collateral of token if decimals != 18");
         require(IERC20Metadata(_token).decimals() == 6, "can't account for crypto-fiat token if decimals != 6");
 
@@ -81,19 +70,18 @@ contract BondingCurve is AccessControl, Pausable {
                     )
                 );
 
-        trustedUniUsdcEthPool = _uniUsdcEthPool;
         originalContract = address(this);
+        weth = IWETH(_weth);
 
-        uniV2Pool = IUniswapV2Factory(_uniV2Fact).createPair(_token, _weth);
-        weth = _weth;
-        wethPool = _wethPool;
-
-        trustedToken = IToken(_token);
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    function pauseBonding() public onlyRole(DEFAULT_ADMIN_ROLE){
-        _pause();
+    function pauseBonding() public override onlyRole(DEFAULT_ADMIN_ROLE){
+        if (! paused()) _pause();
+    }
+
+    function unpauseBonding() public override onlyRole(DEFAULT_ADMIN_ROLE){
+        if (paused()) _unpause();
     }
 
     function checkRateLimit(UserAccount storage _userAccount, uint256 collateral) private {
@@ -132,14 +120,15 @@ contract BondingCurve is AccessControl, Pausable {
         return u256SqrtPrice * u256SqrtPrice >> (192);
     }
 
-    function mintInitRewards() external {
+    function mintInitRewards() external override {
         require(!initComplete, "cannot call again");
         initComplete = true;
+        IToken trustedToken = token();
         trustedToken.approve(address(trustedToken), 180573542300);
         trustedToken.mint(address(this), 180573542300);
     }
 
-    function calcPricePerToken(uint256 supply) view public returns (int128) {
+    function calcPricePerToken(uint256 supply) view public override returns (int128) {
         int128 eExp = ABDKMath64x64.neg(
             ABDKMath64x64.div(
                 ABDKMath64x64.fromUInt(supply),
@@ -160,7 +149,7 @@ contract BondingCurve is AccessControl, Pausable {
         return(ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
     }
 
-    function bond(uint256 _wethInput) payable external
+    function bond(uint256 _wethInput) payable external override
         onlyRole(BOND_ROLE)
         noDelegateCall
         whenNotPaused
@@ -171,9 +160,10 @@ contract BondingCurve is AccessControl, Pausable {
             "You can only bond with either WETH or ETH"
         );
         if (_wethInput > 0) {
-            require(IERC20(weth).allowance(msg.sender, address(this)) >= _wethInput, "Insufficient allowance for tx");
-            require(IERC20(weth).balanceOf(msg.sender) >= _wethInput, "You need > 0 WETH to bond");
+            require(IERC20(address(weth)).allowance(msg.sender, address(this)) >= _wethInput, "Insufficient allowance for tx");
+            require(IERC20(address(weth)).balanceOf(msg.sender) >= _wethInput, "You need > 0 WETH to bond");
         }
+        IToken trustedToken = token();
         uint256 totalStart;
         uint256 totalEnd;
         UserAccount storage user = mintBalance[msg.sender];
@@ -212,7 +202,7 @@ contract BondingCurve is AccessControl, Pausable {
         user.timeOfLastTrade = block.timestamp;
         user.balance += tokensToIssue;
         if (_wethInput > 0){
-            (bool success, ) = weth.call(
+            (bool success, ) = address(weth).call(
                 abi.encodeWithSignature(
                     "transferFrom(address,address,uint256)",
                     msg.sender, address(this), collateral
@@ -226,7 +216,7 @@ contract BondingCurve is AccessControl, Pausable {
         } 
     }
 
-    function withdrawMintBalance() noDelegateCall external {
+    function withdrawMintBalance() external override noDelegateCall {
         UserAccount storage user = mintBalance[msg.sender];
 
         require(user.opened, "user account is not opened");
@@ -234,25 +224,25 @@ contract BondingCurve is AccessControl, Pausable {
         uint256 amount = user.balance;
         user.balance = 0;
 
-        trustedToken.mint(msg.sender, amount);
+        token().mint(msg.sender, amount);
     }
 
-    function withdrawPromoBalance() noDelegateCall external {
+    function withdrawPromoBalance() external override noDelegateCall {
         require(promoBalance[msg.sender] > 0, "you do not have any pending transfers");
         uint256 amount = promoBalance[msg.sender];
         promoBalance[msg.sender] = 0;
 
-        trustedToken.transfer(msg.sender, amount);
+        token().transfer(msg.sender, amount);
     }
 
-    function approveBonding() external whenNotPaused {
+    function approveBonding() external override whenNotPaused {
         require(msg.sender != address(0), "hey, no funny business!");
         require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
 
         _setupRole(BOND_ROLE, msg.sender);
     }
 
-    function setRateLimitThreshold(uint256 newThreshold) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setRateLimitThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         rateLimitThreshold = newThreshold;
     }
 
