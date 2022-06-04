@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
+import "./access/Admin.sol";
 import "./interfaces/IManager.sol";
 import "./BondingCurve.sol";
 import "./Token.sol";
@@ -13,19 +14,15 @@ import "./Token.sol";
  * @notice Manages the Bonding Curve and Token; is in charge of their evolution when
  * upgrades are needed.
 */
-contract Manager is IManager, AccessControl {
-    bytes32 public constant GOVERNOR_ROLE = keccak256("GOVERNOR_ROLE");
+contract Manager is IManager, Admin {
 
     IToken public override token;
     IBondingCurve public override curve;
 
-    constructor(address _weth){
-        Token _token = new Token();
+    constructor(){
+        Token _token = new Token(address(this));
         address tokenAddress = address(_token);
         _setToken(tokenAddress);
-
-        BondingCurve _curve = new BondingCurve(tokenAddress, _weth, address(this));
-        _setCurve(address(_curve));
 
         _setupRole(GOVERNOR_ROLE, msg.sender);
     }

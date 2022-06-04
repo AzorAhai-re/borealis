@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 pragma solidity ^0.8.4;
 
-import "hardhat/console.sol";
-
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 
+import "./access/IAdmin.sol";
 import "./interfaces/IBondingCurve.sol";
 import "./interfaces/IMap.sol";
 import "./Map.sol";
@@ -15,13 +14,13 @@ import "./Map.sol";
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
+contract BondingCurve is IBondingCurve, Map {
     // used to prevent delegate calls
     address private immutable originalContract;
+    IManager internal manager;
     IWETH   private weth;
+    IUniswapV3Pool public oracle;
 
-    bytes32 public constant UNBOND_ROLE = keccak256("UNBOND");
-    bytes32 public constant BOND_ROLE = keccak256("BOND");
     uint256 public constant targetSupply = 2501235447590;
 
     mapping(address => uint256) private promoBalance;
@@ -51,7 +50,8 @@ contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
     constructor (
         address _token,
         address _weth,
-        address _manager
+        address _manager,
+        address _oracle
     ) Map(_manager) {
         require(IERC20Metadata(_weth).decimals() == 18, "can't account for collateral of token if decimals != 18");
         require(IERC20Metadata(_token).decimals() == 6, "can't account for crypto-fiat token if decimals != 6");
@@ -72,16 +72,8 @@ contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
 
         originalContract = address(this);
         weth = IWETH(_weth);
-
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
-
-    function pauseBonding() public override onlyRole(DEFAULT_ADMIN_ROLE){
-        if (! paused()) _pause();
-    }
-
-    function unpauseBonding() public override onlyRole(DEFAULT_ADMIN_ROLE){
-        if (paused()) _unpause();
+        manager = IManager(_manager);
+        oracle = IUniswapV3Pool(_oracle);
     }
 
     function checkRateLimit(UserAccount storage _userAccount, uint256 collateral) private {
@@ -109,7 +101,7 @@ contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
     }
 
     function usdEth() view internal returns (uint256) {
-        (uint160 sqrtPricex96, , , , , ,) = IUniswapV3Pool(trustedUniUsdcEthPool).slot0();
+        (uint160 sqrtPricex96, , , , , ,) = oracle.slot0();
 
         uint256 u256SqrtPrice;
         require(
@@ -150,10 +142,10 @@ contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
     }
 
     function bond(uint256 _wethInput) payable external override
-        onlyRole(BOND_ROLE)
         noDelegateCall
-        whenNotPaused
     {
+        require(IAdmin(address(manager)).isBonder(msg.sender), "Bonding Curve: Not authorised to bond");
+        require(!IAdmin(address(manager)).isPaused(), "Bonding Curve: bonding paused");
         require(
             (_wethInput > 0 && msg.value == 0) ||
             (msg.value > 0 && _wethInput == 0),
@@ -235,14 +227,8 @@ contract BondingCurve is IBondingCurve, Map, AccessControl, Pausable {
         token().transfer(msg.sender, amount);
     }
 
-    function approveBonding() external override whenNotPaused {
-        require(msg.sender != address(0), "hey, no funny business!");
-        require(!hasRole(BOND_ROLE, msg.sender), "`msg.sender` already has the BOND role");
-
-        _setupRole(BOND_ROLE, msg.sender);
-    }
-
-    function setRateLimitThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setRateLimitThreshold(uint256 newThreshold) external override {
+        require(IAdmin(address(manager)).isGovernor(msg.sender), "Bonding Curve: not authorized to set rate limit");
         rateLimitThreshold = newThreshold;
     }
 

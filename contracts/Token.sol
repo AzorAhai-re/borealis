@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-only
 pragma solidity ^0.8.4;
 
-import "hardhat/console.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+import "./access/IAdmin.sol";
 import "./interfaces/IToken.sol";
+import "./interfaces/IManager.sol";
 
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
-contract Token is IToken, ERC20, AccessControl {
+contract Token is IToken, ERC20 {
     // solhint-disable-next-line var-name-mixedcase
     bytes32 public DOMAIN_SEPARATOR;
 
@@ -24,11 +26,7 @@ contract Token is IToken, ERC20, AccessControl {
     bytes32 public constant PERMIT_TYPEHASH =
         0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
 
-    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
-    bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
-
-    address public immutable deployer;
-
+    IManager internal _manager;
     mapping(address => uint256) public nonces;
 
     struct Permit {
@@ -51,7 +49,9 @@ contract Token is IToken, ERC20, AccessControl {
         _;
     }
 
-    constructor () ERC20("{token_name}", "{token_symbol}") {
+    constructor (address manager)
+        ERC20("{token_name}", "{token_symbol}")
+    {
         uint256 chainId;
 
         // solhint-disable-next-line no-inline-assembly
@@ -71,21 +71,11 @@ contract Token is IToken, ERC20, AccessControl {
             )
         );
 
-        deployer = msg.sender;
-
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _manager = IManager(manager);
     }
 
     function decimals() public pure override returns (uint8) {
         return 6;
-    }
-
-    /// @notice After the deployment/bootstrap period, the deployer shouldn't
-    ///         be allowed to unconditionally mint and burn tokens.
-    /// @dev The mint and burn roles are meant to be executed by the Governance contracts
-    ///      and the pool.
-    function revokeAdminRole() external {
-        revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
     function digest(
@@ -113,14 +103,16 @@ contract Token is IToken, ERC20, AccessControl {
     /// @notice Mint `amount` {token_name}s `to` an address 
     /// @param to address to mint {token_name}s to
     /// @param amount how much {token_name}s to mint
-    function mint(address to, uint256 amount) external override onlyRole(MINTER_ROLE) {
+    function mint(address to, uint256 amount) external override {
+        require(IAdmin(address(_manager)).isMinter(msg.sender), "Token: Not authorized to mint");
         _mint(to, amount);
     }
 
     /// @notice Burn `amount` {token_name}s `to` an address 
     /// @param from address to burn {token_name}s from
     /// @param amount how much {token_name}s to burn
-    function burn(address from, uint256 amount) external onlyRole(BURNER_ROLE) {
+    function burn(address from, uint256 amount) external {
+        require(IAdmin(address(_manager)).isBurner(msg.sender), "Token: Not authorized to burn");
         _burn(from, amount);
     }
 
@@ -131,9 +123,12 @@ contract Token is IToken, ERC20, AccessControl {
     /// @param to the receipient of the tokens
     /// @param amount how much tokens to be transfered
     /// @param permit_resp permit payload
-    function tranferFromUsingPermit(address from, address to, uint256 amount,
-                         Permit memory permit_resp
-    ) public onlyAuthed(from, to, amount, permit_resp)  returns(bool) {
+    function tranferFromUsingPermit(
+        address from,
+        address to,
+        uint256 amount,
+        Permit memory permit_resp
+    ) public onlyAuthed(from, to, amount, permit_resp) returns(bool) {
         _transfer(from, to, amount);
         return true;
     }

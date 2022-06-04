@@ -27,10 +27,6 @@ interface IBondingCurve {
 
     function calcPricePerToken(uint256 supply) view external returns (int128);
 
-    function pauseBonding() external;
-
-    function unpauseBonding() external;
-
     function mintInitRewards() external;
 
     function bond(uint256 _wethInput) payable external;
@@ -38,8 +34,6 @@ interface IBondingCurve {
     function withdrawMintBalance() external;
 
     function withdrawPromoBalance() external;
-
-    function approveBonding() external;
 
     function setRateLimitThreshold(uint256 newThreshold) external;
 
