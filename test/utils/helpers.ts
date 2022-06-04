@@ -10,72 +10,45 @@ import {
 import { Token, BondingCurve } from "../../typechain-types"
 
 const UniPoolArtifact = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
-const UniPoolFactArtifact = require("@uniswap/v2-core/build/UniswapV2Factory.json");
+// const UniPoolFactArtifact = require("@uniswap/v2-core/build/UniswapV2Factory.json");
 
-export const deployToken = async (deployer?: SignerWithAddress) => {
-    deployer = deployer ? deployer : (await ethers.getSigners())[0]
+export const deployContracts  = async (deployer?: SignerWithAddress) => {
+    deployer = deployer ? deployer : (await ethers.getSigners())[0];
 
-    const tokenFactory = await ethers.getContractFactory("Token", deployer)
+    const fakeWETH9Factory = await ethers.getContractFactory("ERC20");
+    const fakeWETH9 = await fakeWETH9Factory.deploy("Wrapped Ether", "WETH");
+    await fakeWETH9.deployed();
 
-    const token = await tokenFactory.deploy() as Token
-    await token.deployed()
-
-    await token.grantRole(await token.MINTER_ROLE(), deployer.address)
-    await token.grantRole(await token.BURNER_ROLE(), deployer.address)
-
-    return token
-}
-
-export const deployCurve = async (deployer?: SignerWithAddress, token?: Token) => {
-    deployer = deployer ? deployer : (await ethers.getSigners())[0]
-
-    if (token) { null } else {
-        const tokenFactory = await ethers.getContractFactory("Token", deployer)
-        const version = 1
-
-        token = await tokenFactory.deploy() as Token
-            
-        await token.deployed()
-        
-        await token.grantRole(await token.MINTER_ROLE(), deployer.address)
-        await token.grantRole(await token.BURNER_ROLE(), deployer.address)
-    }
+    const managerFactory = await ethers.getContractFactory("Manager");
+    const manager = await managerFactory.deploy();
+    await manager.deployed();
 
     const fakeUniUsdcWethPoolFactory = await ethers.getContractFactory("UniswapV3Pool", deployer);
     const fakeUniUsdcWethPool = await fakeUniUsdcWethPoolFactory.deploy();
     await fakeUniUsdcWethPool.deployed();
 
-    // console.log(UniPoolFactArtifact.evm.deployedBytecode)
-    const fakeUniPoolFactoryFactory = await ethers.getContractFactoryFromArtifact(
-        {
-            _format: "hh-sol-artifact-1",
-            contractName: "UniswapV2Factory",
-            sourceName: "@uniswap/v2-core/contracts/UniswapV2Factory.sol",
-            abi: UniPoolFactArtifact.abi,
-            bytecode: UniPoolFactArtifact.evm.bytecode.object,
-            deployedBytecode: UniPoolFactArtifact.evm.deployedBytecode.object,
-            linkReferences: {},
-            deployedLinkReferences: {}
-        }, deployer
+    const curveFactory = await ethers.getContractFactory("BondingCurve");
+    const curve = await curveFactory.deploy(
+        await manager.token(),
+        fakeWETH9.address,
+        manager.address,
+        fakeUniUsdcWethPool.address
     );
-    const fakeUniPoolFactory = await fakeUniPoolFactoryFactory.deploy(deployer.address);
-    await fakeUniPoolFactory.deployed();
-    
-    const fakeWETH9Factory = await ethers.getContractFactory("ERC20");
-    const fakeWETH9 = await fakeWETH9Factory.deploy("Wrapped Ether", "WETH");
-    await fakeWETH9.deployed();
-    
-    const curveFactory = await ethers.getContractFactory("BondingCurve", deployer);
-    
-    // leave _wethPool as blank for now
-    const curve = await curveFactory.deploy(fakeUniUsdcWethPool.address, fakeUniPoolFactory.address, token.address, fakeWETH9.address, constants.AddressZero) as BondingCurve
-    await curve.deployed()
-    
-    await token.grantRole(await token.MINTER_ROLE(), curve.address);
+    await curve.deployed();
+    await manager.connect(deployer).setCurve(curve.address);
+
+    const tokenFactory = await ethers.getContractFactory("Token");
+    const token = new ethers.Contract(await manager.token(), tokenFactory.interface, deployer);
+    await token.deployed();
+    await manager.approveMint(deployer.address);
+    await manager.approveBurn(deployer.address);
+
+    await manager.approveMint(curve.address);
     await curve.mintInitRewards();
 
-    return {"bondingCurve": curve, "token": token}
+    return {"manager": manager, "curve": curve as BondingCurve, "token": token as Token}
 }
+
 
 export const getPermitDigest = async (
     token: Token, payload: 

@@ -6,12 +6,13 @@ import { parseEther, hexlify } from "ethers/lib/utils";
 import { MockProvider, solidity } from "ethereum-waffle";
 import { ecsign } from 'ethereumjs-util'
 
-import { Token } from "../typechain-types";
-import { deployToken, getPermitDigest } from "./utils/helpers";
+import { Token, Manager } from "../typechain-types";
+import { deployContracts, getPermitDigest } from "./utils/helpers";
 
 chai.use(solidity)
 
 describe("Token Test", function () {
+    let manager: Manager;
     let token: Token;
     let deployer: SignerWithAddress;
     let sender: SignerWithAddress;
@@ -27,9 +28,11 @@ describe("Token Test", function () {
     const TWO_ETH = parseEther("2.0")
     
     beforeEach(async () => {
-        [ deployer, sender, receiver, nonAdmin, brokeBoi ] = await ethers.getSigners()
+        [ deployer, sender, receiver, nonAdmin, brokeBoi ] = await ethers.getSigners();
 
-        token = await deployToken(deployer)
+        const contracts = (await deployContracts(deployer));
+        token = contracts.token;
+        manager = contracts.manager;
     });
 
     describe("Decimals",async () => {
@@ -40,25 +43,25 @@ describe("Token Test", function () {
 
     describe("Access Control", async () => {
         it("should not let non-admins grant roles", async () => {
-            const adminRole = await token.DEFAULT_ADMIN_ROLE()
+            const adminRole = await manager.DEFAULT_ADMIN_ROLE()
             await expect(
-                token.connect(nonAdmin).grantRole(
+                manager.connect(nonAdmin).grantRole(
                     adminRole, nonAdmin.address
                 )
             ).to.be.reverted
 
-            expect(await token.hasRole(adminRole, nonAdmin.address)
+            expect(await manager.hasRole(adminRole, nonAdmin.address)
             ).to.be.eq(false)
         });
 
         it("should allow admins to grant roles", async () => {
-            const minterRole = await token.MINTER_ROLE()
+            const minterRole = await manager.MINTER_ROLE()
 
             await expect(
-                token.connect(deployer).grantRole(minterRole, nonAdmin.address)
+                manager.connect(deployer).grantRole(minterRole, nonAdmin.address)
             ).to.not.be.reverted
             expect(
-                await token.hasRole(minterRole, nonAdmin.address)
+                await manager.hasRole(minterRole, nonAdmin.address)
             ).to.be.eq(true)
 
             await expect(
@@ -70,24 +73,24 @@ describe("Token Test", function () {
         });
 
         it("should be able to revoke a role", async () => {
-            const adminRole = await token.DEFAULT_ADMIN_ROLE()
-            const minterRole = await token.MINTER_ROLE()
+            const adminRole = await manager.GOVERNOR_ROLE()
+            const minterRole = await manager.MINTER_ROLE()
 
             await expect(
-                token.connect(deployer).revokeRole(adminRole, deployer.address)
+                manager.connect(deployer).revokeRole(adminRole, deployer.address)
             ).to.not.be.reverted
             expect(
-                await token.connect(deployer).hasRole(adminRole, deployer.address)
+                await manager.connect(deployer).hasRole(adminRole, deployer.address)
             ).to.be.eq(false)
 
             await expect(
-                token.connect(deployer).grantRole(adminRole, nonAdmin.address)
+                manager.connect(deployer).grantRole(adminRole, nonAdmin.address)
             ).to.be.reverted
             await expect(
-                token.connect(deployer).grantRole(adminRole, nonAdmin.address)
+                manager.connect(deployer).grantRole(adminRole, nonAdmin.address)
             ).to.be.reverted
             await expect(
-                token.connect(deployer).grantRole(minterRole, nonAdmin.address)
+                manager.connect(deployer).grantRole(minterRole, nonAdmin.address)
             ).to.be.reverted
         })
     })

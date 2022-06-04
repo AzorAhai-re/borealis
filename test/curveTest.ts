@@ -4,13 +4,14 @@ import { BigNumber } from "ethers";
 import { parseEther } from "ethers/lib/utils";
 import { ethers, GetGas } from "hardhat";
 
-import { ABDKMath64x64Mock, BondingCurve, Token, UniswapV3Pool } from "../typechain-types";
-import { deployToken, deployCurve } from "./utils/helpers";
+import { ABDKMath64x64Mock, BondingCurve, Token, Manager, UniswapV3Pool } from "../typechain-types";
+import { deployContracts } from "./utils/helpers";
 
 describe("Bonding Curve Test", function () {
 
     let token: Token;
     let curve: BondingCurve;
+    let manager: Manager;
     let math: ABDKMath64x64Mock;
     let pool: UniswapV3Pool;
 
@@ -22,11 +23,12 @@ describe("Bonding Curve Test", function () {
     let xcdUsd: BigNumber;
     
     beforeEach(async () => {
-        [ deployer, bonder, receiver, nonAdmin ] = await ethers.getSigners()
+        [ deployer, bonder, receiver, nonAdmin ] = await ethers.getSigners();
 
-        token = await deployToken(deployer)
-        const { bondingCurve } = await deployCurve(deployer, token)
-        curve = bondingCurve
+        const contracts = await deployContracts(deployer);
+        curve = contracts.curve;
+        token = contracts.token;
+        manager = contracts.manager;
 
         const MathFactory = await ethers.getContractFactory("ABDKMath64x64Mock");
         math = await MathFactory.deploy();
@@ -55,7 +57,8 @@ describe("Bonding Curve Test", function () {
 
     describe("Bonding", async () => {
         it("should cosmetically prove to be an increasing function up till the h-asymptote",async () => {
-            await curve.connect(bonder).approveBonding();
+            // await curve.connect(bonder).approveBonding();
+            await manager.approveBonding(bonder.address);
             await curve.connect(deployer).setRateLimitThreshold(parseEther("5000"));
             const stage0 = await getSpotPrice();
 
@@ -87,7 +90,7 @@ describe("Bonding Curve Test", function () {
         });
 
         it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
-            const tx_gas_approve = await GetGas(await curve.connect(bonder).approveBonding());
+            const tx_gas_approve = await GetGas(await manager.approveBonding(bonder.address));
             const current_supply = (await token.totalSupply()).div(xcdUsd);
             const tx_gas_bond = await GetGas(await curve.connect(bonder).bond(0, {value: parseEther("0.3")}));
             await curve.connect(bonder).withdrawMintBalance();
@@ -124,8 +127,8 @@ describe("Bonding Curve Test", function () {
             // with the bond-deploy-mint already in the currSupply, this takes
             // the curve way past the beginning of the "threshhold domain"
             await token.connect(deployer).mint(receiver.address, 2962491838571 - 180573542300);
-            await curve.connect(bonder).approveBonding();
-            
+            await manager.approveBonding(bonder.address);
+
             await checkSpotPrice();
             await curve.connect(bonder).bond(0, {value: parseEther("1000")});
             await checkSpotPrice();
