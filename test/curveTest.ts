@@ -19,11 +19,12 @@ describe("Bonding Curve Test", function () {
     let bonder: SignerWithAddress;
     let receiver: SignerWithAddress;
     let nonAdmin: SignerWithAddress;
+    let notAuthorized: SignerWithAddress;
 
     let xcdUsd: BigNumber;
     
     beforeEach(async () => {
-        [ deployer, bonder, receiver, nonAdmin ] = await ethers.getSigners();
+        [ deployer, bonder, receiver, nonAdmin, notAuthorized ] = await ethers.getSigners();
 
         const contracts = await deployContracts(deployer);
         curve = contracts.curve;
@@ -56,7 +57,31 @@ describe("Bonding Curve Test", function () {
     }
 
     describe("Bonding", async () => {
-        it("should cosmetically prove to be an increasing function up till the h-asymptote",async () => {
+        it("should not initialize minting rewards twice", async () => {
+            await expect(
+                curve.connect(deployer).mintInitRewards()
+            ).to.be.revertedWith("cannot call again");
+        });
+        it("should not allow bonding unless approved", async () => {
+            await expect(
+                curve.connect(notAuthorized).bond(0, {value: parseEther("0.03")})
+            ).to.be.revertedWith("Bonding Curve: Not authorised to bond");
+        });
+        it("should not be able to withdraw/mint Token if account unopened", async () => {
+            await expect(
+                curve.connect(receiver).withdrawMintBalance()
+            ).to.be.revertedWith("user account is not opened");
+        });
+        it("should not be able to withdraw/mint Token if account does not have a balance", async () => {
+            await manager.approveBonding(bonder.address);
+            await curve.connect(bonder).bond(0, {value: parseEther("0.3")});
+
+            await curve.connect(bonder).withdrawMintBalance();
+            await expect(
+                curve.connect(bonder).withdrawMintBalance()
+            ).to.be.revertedWith("you do not have any pending transfers");
+        });
+        it("should cosmetically prove to be an increasing function up till the h-asymptote", async () => {
             // await curve.connect(bonder).approveBonding();
             await manager.approveBonding(bonder.address);
             await curve.connect(deployer).setRateLimitThreshold(parseEther("5000"));
@@ -89,7 +114,7 @@ describe("Bonding Curve Test", function () {
             )
         });
 
-        it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
+        it("should be able to bond 0.3 ETH worth of {teoken_symbol}", async () => {
             const tx_gas_approve = await GetGas(await manager.approveBonding(bonder.address));
             const current_supply = (await token.totalSupply()).div(xcdUsd);
             const tx_gas_bond = await GetGas(await curve.connect(bonder).bond(0, {value: parseEther("0.3")}));
