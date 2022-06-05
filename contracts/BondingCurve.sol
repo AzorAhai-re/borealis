@@ -31,8 +31,9 @@ contract BondingCurve is IBondingCurve, Map {
     uint256 internal promoBonus;
 
     address public trustedUniUsdcEthPool;
-    bool internal initComplete;
-    uint16 promoEpoch;
+    uint16 public promoEpoch;
+    bool private initComplete;
+
     // ToDo: set on governance
     uint256 private rateLimitEpoch = 4 hours;
     // ToDo: set on governance
@@ -87,8 +88,7 @@ contract BondingCurve is IBondingCurve, Map {
         if (_userAccount.mintAllowance < collateral) {
             if (
                 (
-                    block.timestamp - _userAccount.timeOfLastTrade >= rateLimitEpoch &&
-                    _userAccount.opened
+                    block.timestamp - _userAccount.timeOfLastTrade >= rateLimitEpoch
                 )
             ) {
                 // refresh, or open account, mint allowance to be able to mint
