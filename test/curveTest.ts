@@ -48,15 +48,14 @@ describe("Bonding Curve Test", function () {
     }
 
     async function checkSpotPrice(){
-        const current_supply = await token.totalSupply();
-        const tokenSpotPrice = await math.toUInt(await curve.calcPricePerToken(current_supply.add(1e6)))
+        const tokenSpotPrice = await getSpotPrice()
         expect(Math.abs(tokenSpotPrice.sub(2700000).toNumber())
         ).to.be.lt(10);
 
         return tokenSpotPrice
     }
 
-    describe("Bonding", async () => {
+    describe("Bond", async () => {
         it("should not initialize minting rewards twice", async () => {
             await expect(
                 curve.connect(deployer).mintInitRewards()
@@ -72,18 +71,10 @@ describe("Bonding Curve Test", function () {
                 curve.connect(receiver).withdrawMintBalance()
             ).to.be.revertedWith("user account is not opened");
         });
-        it("should not be able to withdraw/mint Token if account does not have a balance", async () => {
-            await manager.approveBonding(bonder.address);
-            await curve.connect(bonder).bond(0, {value: parseEther("0.3")});
 
-            await curve.connect(bonder).withdrawMintBalance();
-            await expect(
-                curve.connect(bonder).withdrawMintBalance()
-            ).to.be.revertedWith("you do not have any pending transfers");
-        });
         it("should cosmetically prove to be an increasing function up till the h-asymptote", async () => {
             // await curve.connect(bonder).approveBonding();
-            await manager.approveBonding(bonder.address);
+            await curve.connect(bonder).approveBonding();
             await curve.connect(deployer).setRateLimitThreshold(parseEther("5000"));
             const stage0 = await getSpotPrice();
 
@@ -114,8 +105,8 @@ describe("Bonding Curve Test", function () {
             )
         });
 
-        it("should be able to bond 0.3 ETH worth of {teoken_symbol}", async () => {
-            const tx_gas_approve = await GetGas(await manager.approveBonding(bonder.address));
+        it("should be able to bond 0.3 ETH worth of {token_symbol}", async () => {
+            const tx_gas_approve = await GetGas(await curve.connect(bonder).approveBonding());
             const current_supply = (await token.totalSupply()).div(xcdUsd);
             const tx_gas_bond = await GetGas(await curve.connect(bonder).bond(0, {value: parseEther("0.3")}));
             await curve.connect(bonder).withdrawMintBalance();
@@ -124,7 +115,7 @@ describe("Bonding Curve Test", function () {
             const slot0 = await pool.slot0();
             const sqrtPriceX96 = slot0.sqrtPriceX96; 
             const usdEthPrice = sqrtPriceX96.pow(2).div(BigNumber.from(2).pow(192));
-            const usdMsgValue = parseEther("0.3").div(usdEthPrice);
+            const usdMsgValue = parseEther("0.3").mul(usdEthPrice).div(parseEther("0.1"));
             const xcdDemand = usdMsgValue.toNumber() * 2.7;
 
             const tokenWeight0 = 2.7 * ((current_supply.toNumber() / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
@@ -152,13 +143,83 @@ describe("Bonding Curve Test", function () {
             // with the bond-deploy-mint already in the currSupply, this takes
             // the curve way past the beginning of the "threshhold domain"
             await token.connect(deployer).mint(receiver.address, 2962491838571 - 180573542300);
-            await manager.approveBonding(bonder.address);
+            await curve.connect(bonder).approveBonding();
 
             await checkSpotPrice();
             await curve.connect(bonder).bond(0, {value: parseEther("1000")});
             await checkSpotPrice();
             await curve.connect(bonder).bond(0, {value: parseEther("1000")});
             await checkSpotPrice();
+        });
+    });
+
+    describe("Rate Limit", async () => {
+        let limitInEth: number;
+
+        async function changeLimitInEth(newLimit: number) {
+            const slot0 = await pool.slot0();
+            const sqrtPriceX96 = slot0.sqrtPriceX96;
+            const usdEthPrice = sqrtPriceX96.pow(2).div(BigNumber.from(2).pow(192));
+
+            limitInEth = BigNumber.from(newLimit).div(usdEthPrice).toNumber() / 1e7
+        }
+
+        beforeEach(async () => {
+            await changeLimitInEth(5000 * 1e12)
+        });
+
+        it("should only allow the governor to set a rate limit", async () => {
+            await expect(
+                curve.connect(deployer).setRateLimitThreshold(1500 * 1e6)
+            ).to.not.be.reverted
+
+            await expect(
+                curve.connect(bonder).setRateLimitThreshold(6000 * 1e6)
+            ).to.be.revertedWith("Bonding Curve: not authorized to set rate limit")
+        });
+
+        it("should not allow bonding above collateral rate limit", async () => {
+            await curve.connect(bonder).approveBonding();
+            await expect(
+                // precision on contract is 6 decimal places
+                // so we nudge the limit by 1e-7 to ensure we're just over the limit
+                curve.connect(bonder).bond(0, {value: parseEther((limitInEth + 1e-7).toString())})
+            ).to.be.revertedWith("rate limit: overspending collateral; can not purchase this much")
+
+        });
+
+        it("should be able to change rate limit if governor", async () => {
+            await curve.connect(deployer).setRateLimitThreshold(1500 * 1e6)
+
+            await curve.connect(bonder).approveBonding();
+            await changeLimitInEth(1500 * 1e12)
+            await expect(
+                curve.connect(bonder).bond(0, {value: parseEther(limitInEth.toString())})
+            ).to.not.be.reverted
+
+            await expect(
+                curve.connect(bonder).bond(0, {value: parseEther((limitInEth + 1e-7).toString())})
+            ).to.be.revertedWith("rate limit: overspending collateral; can not purchase this much")
+        });
+    });
+
+    describe("Withdraw", async () => {
+        beforeEach(async () => {
+            await curve.connect(bonder).approveBonding();
+            await curve.connect(bonder).bond(0, {value: parseEther("0.3")});
+        });
+
+        it("should not be able to withdraw/mint Token if account does not have a balance", async () => {
+            await curve.connect(bonder).withdrawMintBalance();
+            await expect(
+                curve.connect(bonder).withdrawMintBalance()
+            ).to.be.revertedWith("you do not have any pending transfers");
+        });
+        it("should not be able to withdraw promo Token if account does not have any pending", async () => {
+            await curve.connect(bonder).withdrawPromoBalance();
+            await expect(
+                curve.connect(bonder).withdrawPromoBalance()
+            ).to.be.revertedWith("you do not have any pending transfers")
         });
     });
 })
