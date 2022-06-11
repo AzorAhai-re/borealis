@@ -112,6 +112,14 @@ contract BondingCurve is IBondingCurve, Map {
         return u256SqrtPrice * u256SqrtPrice >> (192);
     }
 
+    function finalUsdPrice(
+        uint256 collateral,
+        uint256 _usdEth,
+        uint256 decimals
+    ) internal pure returns (uint256) {
+        return collateral * _usdEth / decimals;
+    }
+
     function mintInitRewards() external override {
         require(!initComplete, "cannot call again");
         initComplete = true;
@@ -165,7 +173,7 @@ contract BondingCurve is IBondingCurve, Map {
         uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 10, 27));
 
         uint256 collateral = _wethInput == 0? msg.value : _wethInput;
-        uint256 usdPrice = collateral / usdEthPrice;
+        uint256 usdPrice = finalUsdPrice(collateral, usdEthPrice, 1e17);
 
         checkRateLimit(user, usdPrice);
 
