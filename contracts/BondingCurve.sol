@@ -208,6 +208,10 @@ contract BondingCurve is IBondingCurve, Map {
         } 
     }
 
+    function approveBonding() external override {
+        IAdmin(address(manager)).approveBonding(msg.sender);
+    }
+
     function withdrawMintBalance() external override noDelegateCall {
         UserAccount storage user = mintBalance[msg.sender];
 
