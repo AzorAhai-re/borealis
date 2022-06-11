@@ -31,10 +31,13 @@ interface IBondingCurve {
 
     function bond(uint256 _wethInput) payable external;
 
+    function approveBonding() external;
+
+    function setRateLimitThreshold(uint256 newThreshold) external;
+
     function withdrawMintBalance() external;
 
     function withdrawPromoBalance() external;
 
-    function setRateLimitThreshold(uint256 newThreshold) external;
 
 }
