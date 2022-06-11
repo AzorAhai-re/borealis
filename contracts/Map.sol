@@ -21,8 +21,19 @@ contract Map is IMap {
         return _token;
     }
 
-    function _setRateLimitEpoch(uint256 _newLimit) internal {
-        rateLimitEpoch = _newLimit;
+
+    function updateToken() internal returns (bool hasUpdated){
+        IToken currToken = _manager.token();
+        if (address(currToken) != address(_token)){
+            _token = currToken;
+            hasUpdated = true;
+        }
+        else {
+            hasUpdated = false;
+        }
+    }
+
+    function setManager(address newManager) external override {
     }
 
     function _setRateLimitThreshold(uint256 _newThreshold) internal {

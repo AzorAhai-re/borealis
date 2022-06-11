@@ -123,7 +123,7 @@ contract BondingCurve is IBondingCurve, Map {
     function mintInitRewards() external override {
         require(!initComplete, "cannot call again");
         initComplete = true;
-        IToken trustedToken = token();
+        IToken trustedToken = _currToken();
         trustedToken.approve(address(trustedToken), 180573542300);
         trustedToken.mint(address(this), 180573542300);
     }
@@ -163,7 +163,7 @@ contract BondingCurve is IBondingCurve, Map {
             require(IERC20(address(weth)).allowance(msg.sender, address(this)) >= _wethInput, "Insufficient allowance for tx");
             require(IERC20(address(weth)).balanceOf(msg.sender) >= _wethInput, "You need > 0 WETH to bond");
         }
-        IToken trustedToken = token();
+        IToken trustedToken = _currToken();
         uint256 totalStart;
         uint256 totalEnd;
         UserAccount storage user = mintBalance[msg.sender];
@@ -224,24 +224,29 @@ contract BondingCurve is IBondingCurve, Map {
         UserAccount storage user = mintBalance[msg.sender];
 
         require(user.opened, "user account is not opened");
-        require(user.balance > 0, "you do not have any pending transfers");
+        require(user.balance > 0, "you do not have any pending transfers for mint");
         uint256 amount = user.balance;
         user.balance = 0;
 
-        token().mint(msg.sender, amount);
+        _currToken().mint(msg.sender, amount);
     }
 
     function withdrawPromoBalance() external override noDelegateCall {
-        require(promoBalance[msg.sender] > 0, "you do not have any pending transfers");
+        require(promoBalance[msg.sender] > 0, "you do not have any pending transfers for promo");
         uint256 amount = promoBalance[msg.sender];
         promoBalance[msg.sender] = 0;
 
-        token().transfer(msg.sender, amount);
+        _currToken().transfer(msg.sender, amount);
     }
 
     function setRateLimitThreshold(uint256 newThreshold) external override {
         require(IAdmin(address(manager)).isGovernor(msg.sender), "Bonding Curve: not authorized to set rate limit");
         rateLimitThreshold = newThreshold;
+    }
+
+    function _currToken() private returns (IToken _token) {
+        updateToken();
+        _token = token();
     }
 
 }
