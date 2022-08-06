@@ -2,36 +2,32 @@
 pragma solidity ^0.8.0;
 
 contract UniswapV3Pool {
-
-    struct Slot0 {
-        // the current price
-        uint160 sqrtPriceX96;
-        // the current tick
-        int24 tick;
-        // the most-recently updated index of the observations array
-        uint16 observationIndex;
-        // the current maximum number of observations that are being stored
-        uint16 observationCardinality;
-        // the next maximum number of observations to store, triggered in observations.write
-        uint16 observationCardinalityNext;
-        // the current protocol fee as a percentage of the swap fee taken on withdrawal
-        // represented as an integer denominator (1/x)%
-        uint8 feeProtocol;
-        // whether the pool is locked
-        bool unlocked;
+    function token1() public pure returns(address){
+        return 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     }
 
-    constructor() {}
+    function token0() public pure returns(address){
+        return 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    }
 
-    function slot0() public pure returns(Slot0 memory _slot0) {
-        _slot0 = Slot0({
-            sqrtPriceX96: 1489327643494545155238232443896329,
-            tick: 196839,
-            observationIndex: 534,
-            observationCardinality: 720,
-            observationCardinalityNext: 720,
-            feeProtocol: 0,
-            unlocked: true
-        });
+    function observe(uint32[] calldata secondsAgos)
+        external
+        pure
+        returns (
+            int56[] memory tickCumulatives,
+            uint160[] memory secondsPerLiquidityCumulativeX128s
+        )
+    {
+        secondsAgos; // just to surpress compiler warning
+
+        int56[] memory _tickCumulatives = new int56[](2);
+        _tickCumulatives[0] = 7822720026373;
+        _tickCumulatives[1] = 7823446812459;
+        tickCumulatives = _tickCumulatives;
+
+       uint160[] memory _secondsPerLiquidityCumulativeX128s = new uint160[](2);
+       _secondsPerLiquidityCumulativeX128s[0] = 198044337547992690118316800002740227814977;
+       _secondsPerLiquidityCumulativeX128s[1] = 198044337547992690217121261946121024560557;
+       secondsPerLiquidityCumulativeX128s = _secondsPerLiquidityCumulativeX128s;
     }
 }

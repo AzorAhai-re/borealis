@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 pragma solidity ^0.8.4;
 
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IWETH.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "./IToken.sol";
 import "../libraries/ABDKMath64x64.sol";
-import "../libraries/FullMath.sol";
+import "../libraries/NewFullMath.sol";
 
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
@@ -21,6 +21,14 @@ interface IBondingCurve {
         uint256 balance;
         uint256 timeOfLastTrade;
         uint256 mintAllowance;
+    }
+
+    struct PriceConsultancyParams {
+        address pool;
+        uint32 period;
+        uint128 baseAmount;
+        address baseToken;
+        address quoteToken;
     }
 
     event CollateralReceived(address, uint256);
@@ -38,6 +46,8 @@ interface IBondingCurve {
     function withdrawMintBalance() external;
 
     function withdrawPromoBalance() external;
+
+    function withdrawBalances() external;
 
 
 }

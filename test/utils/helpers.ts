@@ -1,18 +1,20 @@
-import { ethers, upgrades } from "hardhat"
+import { ethers } from "hardhat"
+import JSBI from "jsbi"
 
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers"
-import { BigNumber, BigNumberish, Wallet, constants } from "ethers"
+import { BigNumber, BigNumberish, Wallet } from "ethers"
 import {
     keccak256, solidityPack, defaultAbiCoder,
     isAddress, isBytesLike
 } from "ethers/lib/utils"
 
-import { Token, BondingCurve } from "../../typechain-types"
+import { Token, BondingCurve, UniswapV3Pool } from "../../typechain-types"
+import { TickMath } from "./tickMath"
 
 const UniPoolArtifact = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
 // const UniPoolFactArtifact = require("@uniswap/v2-core/build/UniswapV2Factory.json");
 
-export const deployContracts  = async (deployer?: SignerWithAddress) => {
+export const deployContracts = async (deployer?: SignerWithAddress) => {
     deployer = deployer ? deployer : (await ethers.getSigners())[0];
 
     const fakeWETH9Factory = await ethers.getContractFactory("ERC20");
@@ -46,41 +48,40 @@ export const deployContracts  = async (deployer?: SignerWithAddress) => {
     await manager.approveMint(curve.address);
     await curve.mintInitRewards();
 
-    return {"manager": manager, "curve": curve as BondingCurve, "token": token as Token}
+    return { "manager": manager, "curve": curve as BondingCurve, "token": token as Token }
 }
 
-
 export const getPermitDigest = async (
-    token: Token, payload: 
+    token: Token, payload:
         { owner: string, spender: string, amount: BigNumber },
     nonce: BigNumber, deadline: BigNumber) => {
-        const DOMAIN_SEPARATOR = token.DOMAIN_SEPARATOR()
-        const PERMIT_HASH = token.PERMIT_TYPEHASH()
+    const DOMAIN_SEPARATOR = token.DOMAIN_SEPARATOR()
+    const PERMIT_HASH = token.PERMIT_TYPEHASH()
 
-        const digest = keccak256(
-            solidityPack(
-                ["bytes1", "bytes1", "bytes32", "bytes32"],
-                [
-                    '0x19', '0x01',
-                    await DOMAIN_SEPARATOR,
-                    keccak256(
-                        defaultAbiCoder.encode(
-                            [
-                                'bytes32', 'address', 'address',
-                                'uint256', 'uint256', 'uint256'],
-                            [
-                                await PERMIT_HASH, payload.owner, payload.spender,
-                                payload.amount, nonce, deadline]
-                        )
+    const digest = keccak256(
+        solidityPack(
+            ["bytes1", "bytes1", "bytes32", "bytes32"],
+            [
+                '0x19', '0x01',
+                await DOMAIN_SEPARATOR,
+                keccak256(
+                    defaultAbiCoder.encode(
+                        [
+                            'bytes32', 'address', 'address',
+                            'uint256', 'uint256', 'uint256'],
+                        [
+                            await PERMIT_HASH, payload.owner, payload.spender,
+                            payload.amount, nonce, deadline]
                     )
-                ]
-            )
-        );
+                )
+            ]
+        )
+    );
 
-        return digest
-    }
+    return digest
+}
 
-export const get_raw_signature  = async (
+export const get_raw_signature = async (
     permit: string,
     signer: SignerWithAddress | Wallet,
     contract: string,
@@ -97,13 +98,13 @@ export const get_raw_signature  = async (
     }
 
     const types = {
-        Permit : [
-            {name: "permitHash", type: "bytes32"},
-            {name: "owner", type: "address"},
-            {name: "spender", type: "address"},
-            {name: "value", type: "uint256"},
-            {name: "nonce", type: "uint256"},
-            {name: "deadline", type: "uint256"},
+        Permit: [
+            { name: "permitHash", type: "bytes32" },
+            { name: "owner", type: "address" },
+            { name: "spender", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint256" },
         ]
     }
 
@@ -117,4 +118,38 @@ export const get_raw_signature  = async (
     }
 
     return signer._signTypedData(domain, types, value)
+}
+
+export const consult = async (pool: UniswapV3Pool, secondsAgo: BigNumber) => {
+    const secondsAgos = [3600, 0];
+    const { tickCumulatives, } = await pool.observe(secondsAgos);
+
+    const tickCumulativesDelta: BigNumber = tickCumulatives[1].sub(tickCumulatives[0]);
+
+    let arithmeticMeanTick: BigNumber = tickCumulativesDelta.div(secondsAgo);
+    // Always round to negative infinity
+    if (tickCumulativesDelta.lt(0) && (tickCumulativesDelta.mod(secondsAgo) != BigNumber.from(0))) arithmeticMeanTick.sub(1);
+
+    return arithmeticMeanTick;
+}
+
+export const getQuoteAtTick = (tick: number) => {
+    const sqrtRatiox96: JSBI = TickMath.getSqrtRatioAtTick(tick);
+
+    const ratiox192 = JSBI.exponentiate(sqrtRatiox96, JSBI.BigInt(2));
+    return JSBI.divide(
+        JSBI.multiply(
+            JSBI.leftShift(
+                JSBI.BigInt(1),
+                JSBI.BigInt(192)
+            ),
+            JSBI.BigInt(1e18)
+        ), ratiox192)
+}
+
+export const consultPriceAtTick = async (pool: UniswapV3Pool) => {
+    const twat: BigNumber = await consult(pool, BigNumber.from(3600))
+    return BigNumber.from(
+        getQuoteAtTick(twat.toNumber()).toString()
+    )
 }

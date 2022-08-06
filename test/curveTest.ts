@@ -5,7 +5,7 @@ import { parseEther } from "ethers/lib/utils";
 import { ethers, GetGas } from "hardhat";
 
 import { ABDKMath64x64Mock, BondingCurve, Token, Manager, UniswapV3Pool } from "../typechain-types";
-import { deployContracts } from "./utils/helpers";
+import { deployContracts, consultPriceAtTick } from "./utils/helpers";
 
 describe("Bonding Curve Test", function () {
 
@@ -112,10 +112,9 @@ describe("Bonding Curve Test", function () {
             await curve.connect(bonder).withdrawMintBalance();
             await curve.connect(bonder).withdrawPromoBalance();
 
-            const slot0 = await pool.slot0();
-            const sqrtPriceX96 = slot0.sqrtPriceX96; 
-            const usdEthPrice = sqrtPriceX96.pow(2).div(BigNumber.from(2).pow(192));
-            const usdMsgValue = parseEther("0.3").mul(usdEthPrice).div(parseEther("0.1"));
+            const usdEthPrice = await consultPriceAtTick(pool)
+
+            const usdMsgValue = parseEther("0.3").div(usdEthPrice);
             const xcdDemand = usdMsgValue.toNumber() * 2.7;
 
             const tokenWeight0 = 2.7 * ((current_supply.toNumber() / 1e6) + Math.E ** (0 - (current_supply.toNumber() / 1e6) / 200000));
@@ -157,15 +156,13 @@ describe("Bonding Curve Test", function () {
         let limitInEth: number;
 
         async function changeLimitInEth(newLimit: number) {
-            const slot0 = await pool.slot0();
-            const sqrtPriceX96 = slot0.sqrtPriceX96;
-            const usdEthPrice = sqrtPriceX96.pow(2).div(BigNumber.from(2).pow(192));
+            const usdEthPrice = await consultPriceAtTick(pool)
 
-            limitInEth = BigNumber.from(newLimit).div(usdEthPrice).toNumber() / 1e7
+            limitInEth = newLimit * (usdEthPrice.toNumber() / 1e12)
         }
 
         beforeEach(async () => {
-            await changeLimitInEth(5000 * 1e12)
+            await changeLimitInEth(5000)
         });
 
         it("should only allow the governor to set a rate limit", async () => {
@@ -192,7 +189,7 @@ describe("Bonding Curve Test", function () {
             await curve.connect(deployer).setRateLimitThreshold(1500 * 1e6)
 
             await curve.connect(bonder).approveBonding();
-            await changeLimitInEth(1500 * 1e12)
+            await changeLimitInEth(1500)
             await expect(
                 curve.connect(bonder).bond(0, {value: parseEther(limitInEth.toString())})
             ).to.not.be.reverted

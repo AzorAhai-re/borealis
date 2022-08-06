@@ -5,7 +5,7 @@ import "@nomiclabs/hardhat-waffle";
 import '@nomiclabs/hardhat-ethers';
 import '@openzeppelin/hardhat-upgrades';
 import '@typechain/hardhat';
-import "hardhat-gas-trackooor"
+import "hardhat-gas-trackooor";
 
 export default {
   solidity: {
@@ -13,8 +13,8 @@ export default {
       {
         version: "0.8.4",
         settings: {}
-      }
-    ]
+      },
+    ],
   },
   networks: {
     hardhat: {

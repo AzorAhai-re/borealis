@@ -5,23 +5,22 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 
+import "./Map.sol";
 import "./access/IAdmin.sol";
 import "./interfaces/IBondingCurve.sol";
 import "./interfaces/IMap.sol";
-import "./Map.sol";
+import "./libraries/UniV3OracleConsulter.sol";
 
-/// @title A title that should describe the contract/interface
-/// @author The name of the author
-/// @notice Explain to an end user what this does
-/// @dev Explain to a developer any extra details
+/// @title Bonding Curve contract
+/// @author Jamil B.
+/// @notice Issues {token_name} to buyer based on position on curve
 contract BondingCurve is IBondingCurve, Map {
-    // used to prevent delegate calls
-    address private immutable originalContract;
+    address private immutable originalContract; // used to prevent delegate calls
     IManager internal manager;
-    IWETH   private weth;
-    IUniswapV3Pool public oracle;
+    IWETH private weth;
+    IUniswapV3Pool public pool;
 
-    uint256 public constant targetSupply = 2501235447590;
+    // uint256 public constant targetSupply = ~2501235447590;
 
     mapping(address => uint256) private promoBalance;
     mapping(address => UserAccount) private mintBalance;
@@ -39,7 +38,7 @@ contract BondingCurve is IBondingCurve, Map {
     // ToDo: set on governance
     uint256 private rateLimitThreshold = 5000 * 1e6;
 
-    modifier noDelegateCall () {
+    modifier noDelegateCall() {
         checkIfDelegateCall();
         _;
     }
@@ -48,37 +47,45 @@ contract BondingCurve is IBondingCurve, Map {
         require(address(this) == originalContract, "no delegate call");
     }
 
-    constructor (
+    constructor(
         address _token,
         address _weth,
         address _manager,
-        address _oracle
+        address _pool
     ) Map(_manager) {
-        require(IERC20Metadata(_weth).decimals() == 18, "can't account for collateral of token if decimals != 18");
-        require(IERC20Metadata(_token).decimals() == 6, "can't account for crypto-fiat token if decimals != 6");
+        require(
+            IERC20Metadata(_weth).decimals() == 18,
+            "can't account for collateral of token if decimals != 18"
+        );
+        require(
+            IERC20Metadata(_token).decimals() == 6,
+            "can't account for crypto-fiat token if decimals != 6"
+        );
 
         XCD_USD = ABDKMath64x64.fromUInt(27 * 1e5);
         growthDenNom = ABDKMath64x64.fromUInt(200000000000);
 
-        promoBonus =
-                ABDKMath64x64.toUInt(
-                    ABDKMath64x64.div(
-                        ABDKMath64x64.mul(
-                            ABDKMath64x64.fromUInt(180573542300),
-                            ABDKMath64x64.fromUInt(5)
-                        ),
-                        ABDKMath64x64.fromUInt(100000)
-                    )
-                );
+        promoBonus = ABDKMath64x64.toUInt(
+            ABDKMath64x64.div(
+                ABDKMath64x64.fromUInt(902_867_711_500),
+                ABDKMath64x64.fromUInt(100000)
+            )
+        );
 
         originalContract = address(this);
         weth = IWETH(_weth);
         manager = IManager(_manager);
-        oracle = IUniswapV3Pool(_oracle);
+        pool = IUniswapV3Pool(_pool);
     }
 
-    function checkRateLimit(UserAccount storage _userAccount, uint256 collateral) private {
-        require(collateral <= rateLimitThreshold, "rate limit: overspending collateral; can not purchase this much");
+    function checkRateLimit(
+        UserAccount storage _userAccount,
+        uint256 collateral
+    ) private {
+        require(
+            collateral <= rateLimitThreshold,
+            "rate limit: overspending collateral; can not purchase this much"
+        );
 
         if (!_userAccount.opened) {
             _userAccount.mintAllowance = rateLimitThreshold;
@@ -87,37 +94,27 @@ contract BondingCurve is IBondingCurve, Map {
 
         if (_userAccount.mintAllowance < collateral) {
             if (
-                (
-                    block.timestamp - _userAccount.timeOfLastTrade >= rateLimitEpoch
-                )
+                block.timestamp - _userAccount.timeOfLastTrade >= rateLimitEpoch
             ) {
-                // refresh, or open account, mint allowance to be able to mint
                 _userAccount.mintAllowance = rateLimitThreshold;
-            }
-            else {
-                revert("rate limit: quantitative rate limit reached, please wait next RL epoch");
+            } else {
+                revert(
+                    "rate limit: block time rate limit (RL) reached, please wait until next RL epoch"
+                );
             }
         }
     }
 
-    function usdEth() view internal returns (uint256) {
-        (uint160 sqrtPricex96, , , , , ,) = oracle.slot0();
-
-        uint256 u256SqrtPrice;
-        require(
-            (u256SqrtPrice = uint256(sqrtPricex96)) == sqrtPricex96,
-            "Unsafe conversion from uint160 to uint256"
+    function usdEth() internal view returns (uint256) {
+        return UniV3Oracle.consultPriceAtTick(
+            PriceConsultancyParams(
+                address(pool),
+                3600, // 1hr
+                1e18,
+                pool.token1(),
+                pool.token0()
+            )
         );
-
-        return u256SqrtPrice * u256SqrtPrice >> (192);
-    }
-
-    function finalUsdPrice(
-        uint256 collateral,
-        uint256 _usdEth,
-        uint256 decimals
-    ) internal pure returns (uint256) {
-        return collateral * _usdEth / decimals;
     }
 
     function mintInitRewards() external override {
@@ -128,40 +125,74 @@ contract BondingCurve is IBondingCurve, Map {
         trustedToken.mint(address(this), 180573542300);
     }
 
-    function calcPricePerToken(uint256 supply) view public override returns (int128) {
+    function calcPricePerToken(uint256 supply)
+        public
+        view
+        override
+        returns (int128)
+    {
         int128 eExp = ABDKMath64x64.neg(
-            ABDKMath64x64.div(
-                ABDKMath64x64.fromUInt(supply),
-                growthDenNom
-            )
+            ABDKMath64x64.div(ABDKMath64x64.fromUInt(supply), growthDenNom)
         );
         int128 exponentiated_component = ABDKMath64x64.exp(eExp);
 
-        return (ABDKMath64x64.mul(XCD_USD, ABDKMath64x64.sub(ABDKMath64x64.fromUInt(1), exponentiated_component)));
+        return (
+            ABDKMath64x64.mul(
+                XCD_USD,
+                ABDKMath64x64.sub(
+                    ABDKMath64x64.fromUInt(1),
+                    exponentiated_component
+                )
+            )
+        );
     }
 
-    function calcLogIntegral(uint256 supply) view internal returns (uint256) {
-        int256 eExp = - (int256(supply * 1e5) / 2e11);
+    function calcLogIntegral(uint256 supply) internal view returns (uint256) {
+        int256 eExp = -(int256(supply * 1e5) / 2e11);
 
-        int128 exponentiated_component = ABDKMath64x64.inv(ABDKMath64x64.pow(ABDKMath64x64.fromUInt(2), uint256(ABDKMath64x64.muli(ABDKMath64x64.log_2(ABDKMath64x64.exp(1)), - int256(eExp)))));
-        int128 multipliedBy = ABDKMath64x64.add(ABDKMath64x64.fromUInt(supply), ABDKMath64x64.mul(growthDenNom, exponentiated_component));
+        int128 exponentiated_component = ABDKMath64x64.inv(
+            ABDKMath64x64.pow(
+                ABDKMath64x64.fromUInt(2),
+                uint256(
+                    ABDKMath64x64.muli(
+                        ABDKMath64x64.log_2(ABDKMath64x64.exp(1)),
+                        -int256(eExp)
+                    )
+                )
+            )
+        );
+        int128 multipliedBy = ABDKMath64x64.add(
+            ABDKMath64x64.fromUInt(supply),
+            ABDKMath64x64.mul(growthDenNom, exponentiated_component)
+        );
 
-        return(ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
+        return (ABDKMath64x64.mulu(multipliedBy, 27 * 1e5));
     }
 
-    function bond(uint256 _wethInput) payable external override
-        noDelegateCall
-    {
-        require(IAdmin(address(manager)).isBonder(msg.sender), "Bonding Curve: Not authorised to bond");
-        require(!IAdmin(address(manager)).isPaused(), "Bonding Curve: bonding paused");
+    function bond(uint256 _wethInput) external payable override noDelegateCall {
+        require(
+            IAdmin(address(manager)).isBonder(msg.sender),
+            "Bonding Curve: Not authorised to bond"
+        );
+        require(
+            !IAdmin(address(manager)).isPaused(),
+            "Bonding Curve: bonding paused"
+        );
         require(
             (_wethInput > 0 && msg.value == 0) ||
-            (msg.value > 0 && _wethInput == 0),
+                (msg.value > 0 && _wethInput == 0),
             "You can only bond with either WETH or ETH"
         );
         if (_wethInput > 0) {
-            require(IERC20(address(weth)).allowance(msg.sender, address(this)) >= _wethInput, "Insufficient allowance for tx");
-            require(IERC20(address(weth)).balanceOf(msg.sender) >= _wethInput, "You need > 0 WETH to bond");
+            require(
+                IERC20(address(weth)).allowance(msg.sender, address(this)) >=
+                    _wethInput,
+                "Insufficient allowance for tx"
+            );
+            require(
+                IERC20(address(weth)).balanceOf(msg.sender) >= _wethInput,
+                "Insufficient WETH balance to bond"
+            );
         }
         IToken trustedToken = _currToken();
         uint256 totalStart;
@@ -170,14 +201,16 @@ contract BondingCurve is IBondingCurve, Map {
         uint256 currSupply = trustedToken.totalSupply();
 
         uint256 usdEthPrice = usdEth();
-        uint256 currSupplyUsd = ABDKMath64x64.toUInt(ABDKMath64x64.divu(currSupply * 10, 27));
+        uint256 currSupplyUsd = ABDKMath64x64.toUInt(
+            ABDKMath64x64.divu(currSupply * 10, 27)
+        );
 
-        uint256 collateral = _wethInput == 0? msg.value : _wethInput;
-        uint256 usdPrice = finalUsdPrice(collateral, usdEthPrice, 1e17);
+        uint256 collateral = _wethInput == 0 ? msg.value : _wethInput;
+        uint256 usdPrice = collateral / usdEthPrice;
 
         checkRateLimit(user, usdPrice);
 
-        uint256 xcdDemand = usdPrice * 27 / 10;
+        uint256 xcdDemand = (usdPrice * 27) / 10;
 
         totalStart = calcLogIntegral(currSupplyUsd);
         totalEnd = calcLogIntegral(currSupplyUsd + xcdDemand);
@@ -191,7 +224,8 @@ contract BondingCurve is IBondingCurve, Map {
         if (promoEpoch < 200000 && promoBalance[msg.sender] == 0) {
             promoEpoch += 1;
             uint256 curveBalance = trustedToken.balanceOf(address(this));
-            if (promoBonus > curveBalance){
+            if (promoBonus > curveBalance) {
+                // ensure there's no redidual tokens in the contract
                 promoBalance[msg.sender] += curveBalance;
             } else {
                 promoBalance[msg.sender] += promoBonus;
@@ -201,30 +235,35 @@ contract BondingCurve is IBondingCurve, Map {
         user.mintAllowance -= usdPrice;
         user.timeOfLastTrade = block.timestamp;
         user.balance += tokensToIssue;
-        if (_wethInput > 0){
+        if (_wethInput > 0) {
             (bool success, ) = address(weth).call(
                 abi.encodeWithSignature(
                     "transferFrom(address,address,uint256)",
-                    msg.sender, address(this), collateral
+                    msg.sender,
+                    address(this),
+                    collateral
                 )
             );
 
-            if (!success){
+            if (!success) {
                 user.balance -= tokensToIssue;
                 revert("ERC20: WETH low level transfer failed");
             }
-        } 
+        }
     }
 
     function approveBonding() external override {
         IAdmin(address(manager)).approveBonding(msg.sender);
     }
 
-    function withdrawMintBalance() external override noDelegateCall {
+    function withdrawMintBalance() public override noDelegateCall {
         UserAccount storage user = mintBalance[msg.sender];
 
         require(user.opened, "user account is not opened");
-        require(user.balance > 0, "you do not have any pending transfers for mint");
+        require(
+            user.balance > 0,
+            "you do not have any pending transfers for mint"
+        );
         uint256 amount = user.balance;
         user.balance = 0;
 
@@ -232,15 +271,37 @@ contract BondingCurve is IBondingCurve, Map {
     }
 
     function withdrawPromoBalance() external override noDelegateCall {
-        require(promoBalance[msg.sender] > 0, "you do not have any pending transfers for promo");
+        require(
+            hasPromoBalance(),
+            "you do not have any pending transfers for promo"
+        );
+
+        _withdrawPromoBalance();
+    }
+
+    function _withdrawPromoBalance() internal {
         uint256 amount = promoBalance[msg.sender];
         promoBalance[msg.sender] = 0;
 
         _currToken().transfer(msg.sender, amount);
     }
 
+    function withdrawBalances() external override noDelegateCall {
+        if (hasPromoBalance()) {
+            _withdrawPromoBalance();
+        }
+        withdrawMintBalance();
+    }
+
+    function hasPromoBalance() public view returns (bool) {
+        return (promoBalance[msg.sender] > 0);
+    }
+
     function setRateLimitThreshold(uint256 newThreshold) external override {
-        require(IAdmin(address(manager)).isGovernor(msg.sender), "Bonding Curve: not authorized to set rate limit");
+        require(
+            IAdmin(address(manager)).isGovernor(msg.sender),
+            "Bonding Curve: not authorized to set rate limit"
+        );
         rateLimitThreshold = newThreshold;
     }
 
@@ -248,5 +309,4 @@ contract BondingCurve is IBondingCurve, Map {
         updateToken();
         _token = token();
     }
-
 }
